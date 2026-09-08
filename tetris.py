@@ -97,6 +97,18 @@ SHAPES = {
                   [X,Y,Y,X],
                   [X,Y,Y,X],
                   [X,X,X,X]]),
+        np.array([[X,X,X,X],
+                  [X,X,X,X],
+                  [X,Y,Y,X],
+                  [X,Y,Y,X]]),
+        np.array([[X,X,X,X],
+                  [X,X,X,X],
+                  [Y,Y,X,X],
+                  [Y,Y,X,X]]),
+        np.array([[X,X,X,X],
+                  [Y,Y,X,X],
+                  [Y,Y,X,X],
+                  [X,X,X,X]]),
     ],
     "S":
     [
@@ -160,37 +172,94 @@ SHAPES = {
 # Defining wall kick data for Arika SRS. Source: https://tetris.fandom.com/wiki/Super_Rotation_System
 #TODO: Implement wall kicks
 KICK_TABLE ={
-    "J": {},
+    "J": [
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+            [[ 0, 0], [ 1, 0], [ 1,-1], [ 0, 2], [ 1, 2]],
+            [[ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0]],
+            [[ 0, 0], [-1, 0], [-1,-1], [ 0, 2], [-1, 2]]
+        ],
     "L": [
-            [(0,0), (0,0), (0,0), (0,0), (0,0)],
-            [( 0, 0), ( 1, 0), ( 1,-1), ( 0, 2), ( 1, 2)],
-            [( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0)],
-            [( 0, 0), (-1, 0), (-1,-1), ( 0, 2), (-1, 2)]
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[ 0, 0], [ 1, 0], [ 1,-1], [ 0, 2], [ 1, 2]],
+                        [[ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0]],
+                        [[ 0, 0], [-1, 0], [-1,-1], [ 0, 2], [-1, 2]]
         ],
     "S": [
-            [(0,0), (0,0), (0,0), (0,0), (0,0)],
-            [( 0, 0), ( 1, 0), ( 1,-1), ( 0, 2), ( 1, 2)],
-            [( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0)],
-            [( 0, 0), (-1, 0), (-1,-1), ( 0, 2), (-1, 2)]
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[ 0, 0], [ 1, 0], [ 1,-1], [ 0, 2], [ 1, 2]],
+                        [[ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0]],
+                        [[ 0, 0], [-1, 0], [-1,-1], [ 0, 2], [-1, 2]]
         ],
     "T": [
-            [(0,0), (0,0), (0,0), (0,0), (0,0)],
-            [( 0, 0), ( 1, 0), ( 1,-1), ( 0, 2), ( 1, 2)],
-            [( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0)],
-            [( 0, 0), (-1, 0), (-1,-1), ( 0, 2), (-1, 2)]
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[ 0, 0], [ 1, 0], [ 1,-1], [ 0, 2], [ 1, 2]],
+                        [[ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0]],
+                        [[ 0, 0], [-1, 0], [-1,-1], [ 0, 2], [-1, 2]]
         ],
     "Z": [
-            [(0,0), (0,0), (0,0), (0,0), (0,0)],
-            [( 0, 0), ( 1, 0), ( 1,-1), ( 0, 2), ( 1, 2)],
-            [( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0), ( 0, 0)],
-            [( 0, 0), (-1, 0), (-1,-1), ( 0, 2), (-1, 2)]
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[ 0, 0], [ 1, 0], [ 1,-1], [ 0, 2], [ 1, 2]],
+                        [[ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0], [ 0, 0]],
+                        [[ 0, 0], [-1, 0], [-1,-1], [ 0, 2], [-1, 2]]
         ],
-    "I": [], # Wall kick data for I piece is different from other pieces in SRS
+    "I": [
+            [[0,0], [-1,0], [2,0], [-1,0], [2,0]],
+            [[0, 0], [1, 0], [1,0], [1, 1], [1, -2]],
+            [[ 0, 0], [2, 0], [-1, 0], [2, -1], [-1, -1]],
+            [[0, 0], [0, 0], [0, 0], [0, -2], [0, 1]]
+        ],
     "O": [
-            [(0,0)],
-            [(0,-1)],
-            [(-1,-1)],
-            [(-1,0)]
+            [[0,0],[0,0],[0,0],[0,0],[0,0]],
+            [[0,-1],[0,-1],[0,-1],[0,-1],[0,-1]],
+            [[-1,-1],[-1,-1],[-1,-1],[-1,-1],[-1,-1]],
+            [[-1,0],[-1,0],[-1,0],[-1,0],[-1,0]]
+     ]
+}
+
+#it was really hard to find any information about how 180 degree rotations work with SRS+ (tetr.io system) so i lowk
+#just guessed so it's definitely not perfect but who cares
+KICK_TABLE_180 ={
+    "J": [
+            [[0,0], [0,1], [1,0], [-1,0], [0,-1]],
+            [[0,0], [1,0], [0,1], [0,-1], [-1,0]],
+            [[0,0], [0,0], [0,0], [0,0], [0,0]],
+            [[0,0], [0,0], [0,0], [0,0], [0,0]]
+        ],
+    "L": [
+            [[0,0], [0,1], [1,0], [-1,0], [0,-1]],
+                        [[0,0], [1,0], [0,1], [0,-1], [-1,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]]
+        ],
+    "S": [
+            [[0,0], [0,1], [1,0], [-1,0], [0,-1]],
+                        [[0,0], [1,0], [0,1], [0,-1], [-1,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]]
+        ],
+    "T": [
+            [[0,0], [0,1], [1,0], [-1,0], [0,-1]],
+                        [[0,0], [1,0], [0,1], [0,-1], [-1,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]]
+        ],
+    "Z": [
+            [[0,0], [0,1], [1,0], [-1,0], [0,-1]],
+                        [[0,0], [1,0], [0,1], [0,-1], [-1,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]],
+                        [[0,0], [0,0], [0,0], [0,0], [0,0]]
+        ],
+    "I": [
+            [[0,0], [0,0], [-1,0], [2,0], [-1,1]],
+            [[0, 0], [0, 0], [0,1], [0, -2], [1, 1]],
+            [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
+            [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
+        ],
+    "O": [
+            [[0,0],[0,0],[0,0],[0,0],[0,0]],
+            [[0,-1],[0,-1],[0,-1],[0,-1],[0,-1]],
+            [[-1,-1],[-1,-1],[-1,-1],[-1,-1],[-1,-1]],
+            [[-1,0],[-1,0],[-1,0],[-1,0],[-1,0]]
      ]
 }
 
@@ -499,11 +568,17 @@ class Tetris:
         '''Rotate the active Tetromino clockwise.'''
         if eventDown and self._CWavailable:
             self._CWavailable = False
-            pos = self._activeTetromino.getPosition()
-            state = self._activeTetromino.getState(offset=1)
-            if not self._checkCollision(pos, state) and self._DCDCounter >= self._DCD:
-                self._activeTetromino.rotateCW()
-                self._DCDCounter = 0
+            if self._DCDCounter >= self._DCD:
+                for i in range(5):
+                    srsoffsetx=KICK_TABLE[self._activeTetromino._shape][self._activeTetromino._rotation][i][0]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation+1)%4][i][0]
+                    srsoffsety=KICK_TABLE[self._activeTetromino._shape][self._activeTetromino._rotation][i][1]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation+1)%4][i][1]
+                    pos = [self._activeTetromino.getPosition()[0]-srsoffsety,self._activeTetromino.getPosition()[1]+srsoffsetx]
+                    state = self._activeTetromino.getState(offset=1)
+                    if not self._checkCollision(pos, state):
+                        self._activeTetromino.rotateCW()
+                        self._activeTetromino._position=pos
+                        self._DCDCounter = 0
+                        break
         elif not eventDown and not self._CWavailable:
             self._CWavailable = True
 
@@ -512,25 +587,37 @@ class Tetris:
         '''Rotate the active Tetromino counterclockwise.'''
         if eventDown and self._CCWavailable:
             self._CCWavailable = False
-            pos = self._activeTetromino.getPosition()
-            state = self._activeTetromino.getState(offset=-1)
-            if not self._checkCollision(pos, state) and self._DCDCounter >= self._DCD:
-                self._activeTetromino.rotateCCW()
-                self._DCDCounter = 0
+            if self._DCDCounter >= self._DCD:
+                for i in range(5):
+                    srsoffsetx=KICK_TABLE[self._activeTetromino._shape][self._activeTetromino._rotation][i][0]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation-1)%4][i][0]
+                    srsoffsety=KICK_TABLE[self._activeTetromino._shape][self._activeTetromino._rotation][i][1]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation-1)%4][i][1]
+                    pos = [self._activeTetromino.getPosition()[0]-srsoffsety,self._activeTetromino.getPosition()[1]+srsoffsetx]
+                    state = self._activeTetromino.getState(offset=-1)
+                    if not self._checkCollision(pos, state):
+                        self._activeTetromino.rotateCCW()
+                        self._activeTetromino._position=pos
+                        self._DCDCounter = 0
+                        break
         elif not eventDown and not self._CCWavailable:
             self._CCWavailable = True
-            self._DCDCounter = 0
+            self._DCDCounter = 0 #why do the other two rotation scripts not have this line...?
 
     def _rotate180(self, eventDown):
         '''Rotate the active Tetromino 180 degrees.'''
         if eventDown and self._180available:
             self._180available = False
-            pos = self._activeTetromino.getPosition()
-            state = self._activeTetromino.getState(offset=2)
-            if not self._checkCollision(pos, state) and self._DCDCounter >= self._DCD:
-                self._activeTetromino.rotateCW()
-                self._activeTetromino.rotateCW()
-            self._DCDCounter = 0
+            if self._DCDCounter >= self._DCD:
+                for i in range(5):
+                    srsoffsetx=KICK_TABLE_180[self._activeTetromino._shape][self._activeTetromino._rotation][i][0]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation+2)%4][i][0]
+                    srsoffsety=KICK_TABLE_180[self._activeTetromino._shape][self._activeTetromino._rotation][i][1]-KICK_TABLE[self._activeTetromino._shape][(self._activeTetromino._rotation+2)%4][i][1]
+                    pos = [self._activeTetromino.getPosition()[0]-srsoffsety,self._activeTetromino.getPosition()[1]+srsoffsetx]
+                    state = self._activeTetromino.getState(offset=2)
+                    if not self._checkCollision(pos, state):
+                        self._activeTetromino.rotateCCW()
+                        self._activeTetromino.rotateCCW()
+                        self._activeTetromino._position=pos
+                        self._DCDCounter = 0
+                        break
         elif not eventDown and not self._180available:
             self._180available = True
 
