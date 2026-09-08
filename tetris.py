@@ -529,7 +529,7 @@ class Tetris:
             state = self._activeTetromino.getState(offset=2)
             if not self._checkCollision(pos, state) and self._DCDCounter >= self._DCD:
                 self._activeTetromino.rotateCW()
-            self._activeTetromino.rotateCW()
+                self._activeTetromino.rotateCW()
             self._DCDCounter = 0
         elif not eventDown and not self._180available:
             self._180available = True
@@ -834,7 +834,7 @@ def second_screen():
     root.mainloop()
 
 if __name__ == "__main__":
-    threading.Thread(target=second_screen, daemon=True).start()
+    # threading.Thread(target=second_screen, daemon=True).start()
 
     tetris = Tetris()
     tetris.play()
