@@ -61,6 +61,31 @@ The original uses `np.random.shuffle` and wall-clock busy-waits, so it isn't rep
 - **Headless sink:** records frames and timing. Renderers read from it. Idle, countdown, line-clear and game-over animations are all just frame streams.
 - **Embodied-AI hooks** (from the hack brief): a frame producer can be the game *or* a behaviour (gestures, mood colors, a world transition). The spec reserves an `Animation` interface for these.
 
+## Methodology
+
+The work follows the user's development methodology, [gist 3f51b367d99225eeeefdbd268c68c6cd](https://gist.github.com/aygp-dr/3f51b367d99225eeeefdbd268c68c6cd). In short:
+
+1. **Oracle first.** The conformance traces are the oracle. They are pinned from the reference implementation before anything is claimed about another one.
+2. **A single gate.** `bin/verify.sh` runs every implementation's driver against the traces. It passes only with **zero findings**; there is no warning tier.
+
+   **Verify the verifier.** The gate first checks that it rejects a corrupted trace and several deliberately wrong engines (mutants), and only then that it passes the reference. Run it before believing it.
+3. **SPEC.md is the one canonical document.** The READMEs, this plan and any contract defer to it. A derived document that disagrees with it is the bug, and a run that refutes the spec amends the spec.
+4. **One editable representation.** The traces and fixtures are the single source of truth. Implementations read them in place; they never copy them or clean them up.
+5. **Re-tell, not port.** Each rebuild is idiomatic for its language: Hy macros and Lisp data, Clojure values and specs, Guile's functional style. None is a transliteration of the Python. What must match is the observable behaviour in SPEC.md, not the structure.
+6. **Experiments.** Each investigation, such as a legacy-vs-engine divergence, gets its own directory `experiments/NNN-slug/` with a README covering:
+   - the hypothesis and the success criterion;
+   - what could go wrong;
+   - the exact run command;
+   - dated observations;
+   - a promotion checklist.
+
+   Numbering is monotonic.
+7. **Progressive commits.** Conventional commits, one logical step each, with files staged by name.
+   - A toolchain or fixture change never rides along with language code.
+   - Every commit that touches SPEC.md, the traces or the gate carries a `git notes` entry. The note has a **Timeline** (what was tried, failures included) and a **Reproduction** (the exact command, the observed output, and the supported cell).
+8. **Supported cell.** Each PASS records the `(toolchain, platform)` it was observed on, in `spec/SEALS.md`.
+9. **Isolation.** Work stays in this fork. Findings about the upstream code go into SPEC QUIRKs, experiments or notes here, never into issues, PRs or comments on the upstream repository.
+
 ## Branch and tags
 Work happens on `main` of this fork (`aygp-dr/17x9-Tetris`), with one annotated tag per seal. The `upstream` remote (Nevin-Thinagar) is kept for reference.
 
