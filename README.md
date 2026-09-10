@@ -6,19 +6,19 @@ This game was put together in a relatively short amount of time to hit a deadlin
 I'm hoping that by making this public, people can play around with it, see how the system works, and overall improve the whole system! Maybe you'll even be inspired to make your own game for this kind of display! (Please feel free to do this as well! You can just reuse the display and dummy classes)
 
 ## Things that need to be fixed
-- Inputs are handled after game over, impacting the next game
 - Game loop is not performant
 - Better line clear and game over animations
+- Auto-repeat inputs are cancelled when a different key is pressed
 - More to be added as I think of them...
 
 ## Things that need to be added
-- Wall kicks
 - Lock delay
 - Color change on level up
 - Second window with next pieces, hold piece, score, level, and timer
 - More accurate scoring
 - High score tracking (partially implemented, needs visual on second window)
 - Pausing the game
+- Change handling and keybinds while in-game
 - Scroll score after game over
 - More to be added as I think of them...
 
