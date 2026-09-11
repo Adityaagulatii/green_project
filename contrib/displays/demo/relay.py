@@ -190,11 +190,14 @@ class Relay:
         then its (host, port)."""
         if host not in LOOPBACK:
             raise ValueError(f"the mock relay binds to loopback only, not {host}")
-        self._rec_file = open(self.record, "a", encoding="utf-8") if self.record else None
+        # line-buffered: each record is on disk as it happens, so a live reader
+        # sees the session and a SIGTERM or SIGKILL loses at most one line
+        self._rec_file = (open(self.record, "a", encoding="utf-8", buffering=1)
+                          if self.record else None)
         transport = None
         try:
             async with serve(self.handler, host, port, process_request=self.process_request,
-                             max_size=MAX_MESSAGE) as server:
+                             max_size=MAX_MESSAGE, close_timeout=2) as server:
                 port = next(iter(server.sockets)).getsockname()[1]
                 self.hostport = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
                 self.url = f"ws://{self.hostport}{PATH}"
@@ -202,6 +205,9 @@ class Relay:
                     transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
                         lambda: _Udp(self), local_addr=(host, udp_port))
                     self.udp_addr = tuple(transport.get_extra_info("sockname")[:2])
+                # the session's first record: what this relay advertises, so a
+                # checker knows its displays, default and choices
+                self._rec("relay", "out", "meta", self.capabilities())
                 yield self.url
         finally:
             if transport is not None:
@@ -383,20 +389,7 @@ class Relay:
         self._accept(d, cells)
 
     def _decode(self, d, message):
-        if isinstance(message, str):
-            return dc.decode_hex(message, d.w, d.h), None
-        n = d.w * d.h
-        if d.fmt == "rgb24" and len(message) in (3 * n, 3 * n + 2):
-            return dc.decode_rgb24(message, d.w, d.h, d.rgb16)
-        if dc.is_interop(message):
-            p = dc.parse_interop(message)
-            if (p["w"], p["h"]) != (d.w, d.h):
-                raise dc.FrameError("bad-frame-length",
-                                    f"{p['kind']} {p['w']}x{p['h']} on {d.w}x{d.h}")
-            return dc.interop_cells(p, d.rgb16), None
-        if d.fmt == "rgb24":
-            raise dc.FrameError("bad-frame-length", f"{len(message)} bytes, want {3 * n}")
-        return dc.decode_pal16(message, d.w, d.h)
+        return dc.decode_source_frame(message, d.w, d.h, d.fmt, d.rgb16)
 
     def _admit(self, d, seq):
         """The rate rule, as a GCRA: a frame is dropped if its sequence is lower

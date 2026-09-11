@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 import pathlib
+import signal
 import sys
 
 from contract import display_contract as dc
@@ -47,7 +48,11 @@ async def _relay(args):
         print(f"mock relay {url}  (capabilities: {http_base}/capabilities.json)", flush=True)
         if relay.udp_addr:
             print(f"udp {relay.udp_addr[0]}:{relay.udp_addr[1]}  (BLP, MCUF)", flush=True)
-        await asyncio.Future()
+        # SIGTERM (Process.destroy, kill) ends the relay as cleanly as Ctrl-C
+        stop = asyncio.get_running_loop().create_future()
+        asyncio.get_running_loop().add_signal_handler(
+            signal.SIGTERM, lambda: stop.done() or stop.set_result(None))
+        await stop
 
 
 async def _source(args):

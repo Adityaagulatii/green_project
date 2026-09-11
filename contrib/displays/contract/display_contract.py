@@ -297,6 +297,29 @@ def black_frame(w: int, h: int, fmt: str):
     return fanout_frame(bytes(w * h), w, h, fmt)
 
 
+def decode_source_frame(data, w: int, h: int, fmt: str = "pal16", pal16=None):
+    """A frame from the holder, as a relay reads it -> (cells, seq), or FrameError.
+
+    A text message is hex.  A binary one is rgb24 if the source reserved rgb24
+    and the length is w*h*3 (+2); else a BLP or MCUF packet if it has the
+    magic (and must have this grid: bad-frame-length otherwise); else, for an
+    rgb24 source, bad-frame-length; else pal16.  So the reserved format only
+    decides how binary is read (CHOICE)."""
+    if isinstance(data, str):
+        return decode_hex(data, w, h), None
+    n = w * h
+    if fmt == "rgb24" and len(data) in (3 * n, 3 * n + 2):
+        return decode_rgb24(data, w, h, pal16)
+    if is_interop(data):
+        p = parse_interop(data)
+        if (p["w"], p["h"]) != (w, h):
+            raise FrameError("bad-frame-length", f"{p['kind']} {p['w']}x{p['h']} on {w}x{h}")
+        return interop_cells(p, pal16), None
+    if fmt == "rgb24":
+        raise FrameError("bad-frame-length", f"{len(data)} bytes, want {3 * n} or {3 * n + 2}")
+    return decode_pal16(data, w, h)
+
+
 # --------------------------------------------------------------- interop
 
 def is_interop(data: bytes) -> bool:
@@ -532,20 +555,85 @@ def _drop(s: dict) -> dict:
     return {**s, "dropped": s["dropped"] + 1}
 
 
+RLE_OVER = 256   # fixtures write frames longer than this run-length encoded
+
+
+def _rle(seq) -> list:
+    runs: list = []
+    for x in seq:
+        if runs and runs[-1][0] == x:
+            runs[-1][1] += 1
+        else:
+            runs.append([x, 1])
+    return runs
+
+
+def frame_to_json(data) -> dict:
+    """A frame (bytes or str) as fixtures write it: {"bytes": [ints]} or
+    {"text": str}; or, when it is over RLE_OVER long and run-length encoding
+    is at least 4 times shorter, {"bytes_rle": [[byte, count], ...]} or
+    {"text_rle": [[char, count], ...]}."""
+    binary = isinstance(data, (bytes, bytearray))
+    if len(data) > RLE_OVER:
+        runs = _rle(data)
+        if 4 * len(runs) <= len(data):
+            return {"bytes_rle": runs} if binary else {"text_rle": runs}
+    return {"bytes": list(data)} if binary else {"text": data}
+
+
+def state_to_fixture(s: dict) -> dict:
+    """A state as fixtures write it: cells as "cells" (a list) or "cells_rle"."""
+    out = {k: v for k, v in s.items() if k != "cells"}
+    j = frame_to_json(bytes(s["cells"]))
+    out.update({"cells": j["bytes"]} if "bytes" in j else {"cells_rle": j["bytes_rle"]})
+    return out
+
+
+def state_from_fixture(j: dict) -> dict:
+    out = {k: v for k, v in j.items() if k not in ("cells", "cells_rle")}
+    out["cells"] = (frame_from_json({"bytes_rle": j["cells_rle"]}) if "cells_rle" in j
+                    else bytes(j["cells"]))
+    return out
+
+
+def udp_display(w: int, h: int) -> str | None:
+    """The preset a w x h BLP or MCUF packet goes to (CHOICE): the first with
+    that geometry in the spec's Presets table order, else None."""
+    return next((n for n, p in presets().items() if (p["w"], p["h"]) == (w, h)), None)
+
+
+def frame_from_json(obj: dict):
+    """The inverse of frame_to_json: bytes, str, or None if malformed."""
+    def byte(x):
+        return _is_int(x) and 0 <= x <= 255
+
+    def runs_ok(r, item):
+        return isinstance(r, list) and all(
+            isinstance(p, list) and len(p) == 2 and item(p[0]) and _is_int(p[1]) and p[1] >= 0
+            for p in r)
+
+    if "bytes" in obj:
+        b = obj["bytes"]
+        return bytes(int(x) for x in b) if isinstance(b, list) and all(map(byte, b)) else None
+    if "bytes_rle" in obj:
+        r = obj["bytes_rle"]
+        return b"".join(bytes([int(v)]) * int(n) for v, n in r) if runs_ok(r, byte) else None
+    if "text" in obj:
+        return obj["text"] if isinstance(obj["text"], str) else None
+    if "text_rle" in obj:
+        r = obj["text_rle"]
+        ok = runs_ok(r, lambda c: isinstance(c, str))
+        return "".join(c * int(n) for c, n in r) if ok else None
+    return None
+
+
 def _frame_data(event: dict):
     """The payload of a frame event: bytes, str, or None if malformed.
-    Python callers pass data=bytes|str; JSON fixtures pass bytes=[ints] or text."""
+    Python callers pass data=bytes|str; JSON fixtures use frame_to_json's keys."""
     if "data" in event:
         d = event["data"]
         return bytes(d) if isinstance(d, (bytes, bytearray)) else d if isinstance(d, str) else None
-    if "bytes" in event:
-        b = event["bytes"]
-        if isinstance(b, list) and all(_is_int(x) and 0 <= x <= 255 for x in b):
-            return bytes(int(x) for x in b)
-        return None
-    if "text" in event:
-        return event["text"] if isinstance(event["text"], str) else None
-    return None
+    return frame_from_json(event)
 
 
 def reduce_event(state: dict, event) -> dict:
@@ -643,9 +731,8 @@ def state_from_json(j: dict) -> dict:
 
 
 def event_to_json(e):
-    """A Python event as JSON: frame data becomes bytes=[ints] or text."""
+    """A Python event as JSON: frame data becomes frame_to_json's keys."""
     if isinstance(e, dict) and e.get("event") == "frame" and "data" in e:
-        d = e["data"]
         rest = {k: v for k, v in e.items() if k != "data"}
-        return {**rest, "bytes": list(d)} if isinstance(d, (bytes, bytearray)) else {**rest, "text": d}
+        return {**rest, **frame_to_json(e["data"])}
     return e

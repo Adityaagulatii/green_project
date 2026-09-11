@@ -8,7 +8,12 @@ options and the choices README.md lists.
 """
 import asyncio
 import json
+import pathlib
+import re
+import signal
 import socket
+import subprocess
+import sys
 import time
 import urllib.request
 
@@ -510,6 +515,30 @@ def test_list_shows_every_preset(capsys):
     for name in PROFILES:
         assert name in out
     assert "(default here)" in out and "(spec default)" in out
+
+
+def test_relay_cli_records_live_and_exits_on_sigterm(tmp_path):
+    rec = tmp_path / "session.jsonl"
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "demo", "relay", "--port", "0", "--record", str(rec)],
+        cwd=pathlib.Path(__file__).resolve().parents[1], stdout=subprocess.PIPE, text=True)
+    try:
+        url = re.search(r"ws://\S+", proc.stdout.readline()).group(0)
+
+        async def go():
+            ws = await viewer(url, "tetris")
+            await text(ws, "lease")
+            await ws.close()
+        run(go())
+        # on disk while the relay still runs: meta, open, view, caps, lease
+        assert proc.poll() is None and len(rec.read_text().splitlines()) >= 5
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(10) == 0
+        kinds = [json.loads(line)["kind"] for line in rec.read_text().splitlines()]
+        assert kinds[:5] == ["meta", "open", "text", "text", "text"] and "close" in kinds
+    finally:
+        if proc.poll() is None:
+            proc.kill()
 
 
 def test_refuses_the_live_relay():

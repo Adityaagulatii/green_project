@@ -32,8 +32,10 @@
         "close",
         "text",
         "binary",
-        "udp"
-      ]
+        "udp",
+        "meta"
+      ],
+      "description": "meta: the relay's capabilities.json, as payload (optional; a checker uses its displays and default)"
     },
     "payload": {
       "description": "text: the message as sent; binary and udp: the bytes as lower-case hex; open: {path}; close: {code} or null"
