@@ -17,7 +17,7 @@ This is the one canonical document for the game, its simulator and its conforman
 
 ## 1. Scope and conformance classes
 
-An **engine** is a pure function pair, `init(seed) → S` and `step(S, E) → S'`, with a pure `render(S) → Frame`. There is no I/O, clock or global randomness in the engine core. An engine conforms to the spec if it reproduces every known-answer vector of Appendix A exactly: the primitive vectors (A.1) and every trace vector (A.2), which are the traces in `spec/conformance/traces/` (§12). Its property-based tests MUST also cover P1…P19 (§11).
+An **engine** is a pure function pair, `init(seed) → S` and `step(S, E) → S'`, with a pure `render(S) → Frame`. There is no I/O, clock or global randomness in the engine core. An engine conforms to the spec if it reproduces every known-answer vector of Appendix A exactly: the primitive vectors (A.1) and every trace vector (A.2), which are the traces in `spec/conformance/traces/` (§12). Its property-based tests MUST also cover P1…P20 (§11).
 
 A **simulator** is the host around an engine or another Animation: the display sink, the recorder, renderers and input sources (§10).
 
@@ -336,6 +336,24 @@ frame k = render(S_{k+1})
 
 The boot sequence is therefore frames 0–89 (the countdown) and frame 90 (black). **Frame 91 is the first logical play frame.**
 
+**Ladder semantics.** The run is described in the terms of the state-machine ladder (`aygp-dr/state-machine-ladder`, `spec.org` sealed at tag `spec-v2.4.0`, sha256 `88654eb635fd4d04785aef999046c7182297d091188be9013e5c67e2c9ee51fc`), which is cited here, not restated:
+- the **event trace** `E_0, E_1, …`, per frame and sorted by frame, is the source of truth;
+- `step` folded over it from `init(seed)` is the **derivation**. It is a pure function, so the same log always gives the same states and frames;
+- the frames and the §12 observations are the **view**: derived, and never authoritative.
+
+The phase machine is a **CYCLE** (ladder §2.2): countdown → playing → … → gameover → countdown recurs for the lifetime of the engine. Its right projection is the current state, which is the observation's `phase`, together with transition legality. A projection onto independent flags (such as "is playing" and "is clearing") is unsound for a cycle and is not used. The legal edges, from the phase of `S_k` to the phase of `S_{k+1}`, follow from the pseudocode of §9.2, and experiment [006](experiments/006-phase-edges/) checks them against the Python reference:
+
+**Table 9.1. Legal phase edges** (✓ legal, — illegal).
+
+| from \ to | countdown | playing | clearing | gameover |
+|---|---|---|---|---|
+| **countdown** | ✓ timer | ✓ play starts or resumes | ✓ a lock in the frame that ends the countdown | ✓ likewise |
+| **playing** | — | ✓ | ✓ a lock clears rows | ✓ a spawn collides |
+| **clearing** | — | ✓ the flash ends | ✓ timer, or the resumed rest clears again | ✓ a pending game over, or the resumed rest tops out |
+| **gameover** | ✓ reset | — | — | ✓ timer |
+
+Twelve edges are legal. The frame that ends a countdown runs events: at boot the batch of frame 91, after a game over the resumed rest of a frame. A lock among them can start a flash or a game over at once. Ordinary play does not reach those two edges, but conforming input can, and experiment 006 constructs both. S0 is a countdown (above), so a run's phases form a path from countdown over legal edges (P20).
+
 ### 9.2 The step
 
 A **logical frame** is one iteration of the legacy play loop. It runs these stages in order:
@@ -446,7 +464,7 @@ The PRNG state is never reseeded. **LEGACY-NONDET:** the legacy uses unseeded `n
 
 ## 11. Properties
 
-Every implementation's property-based tests MUST cover P1…P19, with generated seeds and generated event sequences (with events in random frames, including presses without releases, releases without presses, and all eight actions). "Within a game" means between two resets.
+Every implementation's property-based tests MUST cover P1…P20 (P20 from v2 on: the Python reference sealed v1 before P20 existed, and the gate checks P20 on the traces for every implementation), with generated seeds and generated event sequences (with events in random frames, including presses without releases, releases without presses, and all eight actions). "Within a game" means between two resets.
 
 - **P1 Frame contract.** Every rendered frame is 17×9, every channel is an integer in 0..255, and every color is in the palette (§4.1).
 - **P2 Purity and determinism.** `step` never mutates its input. The same seed and events always give the same frames and digests.
@@ -467,10 +485,13 @@ Every implementation's property-based tests MUST cover P1…P19, with generated 
 - **P17 Reset.** After the game-over sequence: score, level and lines are 0, hold is empty, the board is empty, `high_score = max(old high_score, final score)`, and the next game's pieces come from a fresh bag.
 - **P18 Suspended input.** Events delivered during a flash take effect after it, in order. Events delivered during a game over or a countdown have no effect.
 - **P19 Known answers.** The primitive vectors of Appendix A.1 (PRNG, bag and digest) reproduce exactly.
+- **P20 T-legality** (from v2). The phases of `S_0, S_1, S_2, …` form a path of legal edges (Table 9.1): `S_0` is a countdown, and every pair of consecutive frames' phases is a legal edge. The gate also checks P20 on every trace, for every implementation (§12).
 
 ## 12. Conformance traces
 
-Traces live in `spec/conformance/traces/*.json`. They are the **oracle**, generated by the sealing implementation and never edited by hand (see `spec/conformance/README.md` for the driver protocol and the runner). The trace `NN-name.json` is the known-answer vector `KAV-NN` of Appendix A.2, which lists every vector with its purpose, seed, input and digests; this section defines the file format that Appendix A.2 summarises. Each file is one JSON object:
+Traces live in `spec/conformance/traces/*.json`. They are the **oracle**, generated by the sealing implementation and never edited by hand (see `spec/conformance/README.md` for the driver protocol and the runner). The trace `NN-name.json` is the known-answer vector `KAV-NN` of Appendix A.2, which lists every vector with its purpose, seed, input and digests; this section defines the file format that Appendix A.2 summarises.
+
+An implementation's driver replays a trace and reports its digests, the phase of every frame, and the final observation. The gate checks them in the order of the state-machine ladder (§9.1): first the **schema gate** (the fields and domains of the trace, then of the result), then the **state gate** (P20 on the reported phases), then the **oracle** (the digests and the observation against the trace's, below). Each file is one JSON object:
 
 | Field | Type | Meaning |
 |---|---|---|
