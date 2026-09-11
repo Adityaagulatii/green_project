@@ -1,254 +1,176 @@
 (ns tetris.displays.adapt
-  "The adapter core: (SPEC 17x9 RGB frame, display profile) -> (a device frame
-  in the device's color model, a loss report). Pure; no I/O, no clock.
+  "SPEC 17x9 RGB frames (the Tetris engine's palette, SPEC section 4.1) ->
+  pal16 indices on any wal.sh/tools/display v0.2.1 preset, so the game can
+  feed any display. Pure; the result goes on the wire with
+  codec/encode-pal16.
 
-  A profile's sink is a geometry pipeline plus a color model:
+  Colour. Each SPEC colour goes to the nearest entry of the display's
+  16-entry palette (codec/palette16, which already applies the level rule):
+  squared sRGB distance, ties to the lower index. With :lit :keep (the
+  default) black goes to 0 and every other colour to the nearest LIT entry
+  (1..15), so a lit SPEC cell never goes dark; this is the display
+  contract's own rule (index 0 is unlit, any lit index stays lit). The plain
+  rule, :lit :nearest, draws ghost G (42,42,42) as black on cga, and J, S
+  and Z as black on the mono presets.
 
-    [:rotate n]                 n quarter turns clockwise
-    [:viewport {:w :h :anchor-x :anchor-y :follow}]
-                                crop to a w x h window; :follow :top-lit puts
-                                the window's top on the topmost lit row (the
-                                falling piece or the stack), clamped so the
-                                window stays inside, else the anchor decides
-    [:scale {:x :y}]            integer replication
-    [:pad {:w :h :align-x :align-y}]
-                                letterbox into w x h, unlit fill; :center
-                                puts the odd cell right/bottom
+  Geometry, the loss policy, when the grid is not 9 x 17:
+    :letterbox  (default) the largest integer scale k with 9k <= w and
+                17k <= h, at least 1, centred with unlit bars; an axis the
+                1x field still overflows is cropped from the TOP, so the
+                stack and the floor stay and the spawn rows go.
+    :center     1:1, centred on both axes: pads or crops evenly; an odd
+                leftover pads right/bottom and crops the extra top row.
+    :crop       1:1, columns centred, rows anchored at the bottom.
+    :scale      nearest-neighbour resample onto the whole grid (cell-centre
+                sampling): no padding; rows or columns repeat or drop, and
+                the aspect changes.
 
-  Geometry runs on the grid of source coordinates, not on colors, so the
-  loss report (which source cells are hidden) and the inverse of a lossless
-  profile both fall out of the same index map."
+  `loss-table` computes what the default does on each preset (source
+  cells hidden / device cells unlit, for a fully lit frame):
+    green-building, remote 0/0   tetris, c64 0/47   dc32, gameboy 0/27
+    cga40 0/847   hub75 0/1895   arcade 0/367
+    trs80 45/12 (top 5 rows)   ws2812 9/112 (top row)
+    blinkenlights 81/72 (top 9 rows; :scale also hides 81, every other row)
+  adapt-test holds these numbers."
   (:require [clojure.spec.alpha :as s]
+            [tetris.displays.caps :as caps]
+            [tetris.displays.codec :as codec]
             [tetris.displays.specs :as ds]))
 
+(def spec-w ds/spec-w)
+(def spec-h ds/spec-h)
+(def policies #{:letterbox :center :crop :scale})
+(def default-policy :letterbox)
 (def black [0 0 0])
 
-(defn lit? [rgb] (not= rgb black))
-(s/fdef lit? :args (s/cat :rgb ::ds/rgb) :ret boolean?)
+(s/def ::display (set caps/display-names))
+(s/def ::policy policies)
+(s/def ::lit #{:keep :nearest})
+(s/def ::opts (s/keys :opt-un [::display ::policy ::lit]))
+
+;; ------------------------------------------------------------ colour
+
+(defn display-rgb
+  "The 16 colours display `d` shows for indices 0..15 (level rule applied)."
+  [d]
+  (mapv codec/hex->rgb (codec/palette16 (caps/palette (:palette (caps/preset d))))))
+(s/fdef display-rgb :args (s/cat :d ::display) :ret (s/coll-of ::ds/rgb :count 16))
+
+(defn color-index
+  "The pal16 index for `rgb` on a display showing `pal` (16 RGB triples)."
+  [pal rgb lit]
+  (cond
+    (= lit :nearest) (codec/nearest pal rgb)
+    (= rgb black) 0
+    :else (codec/nearest pal rgb 1)))
+(s/fdef color-index
+  :args (s/cat :pal (s/coll-of ::ds/rgb :kind vector? :count 16) :rgb ::ds/rgb :lit ::lit)
+  :ret ::ds/idx
+  :fn (fn [{{:keys [rgb lit]} :args ret :ret}]
+        (or (= lit :nearest) (= (= rgb black) (zero? ret)))))
+
+(defn spec-colors
+  "SPEC code -> pal16 index on display `d`."
+  ([d] (spec-colors d :keep))
+  ([d lit]
+   (let [pal (display-rgb d)]
+     (into (sorted-map) (map (fn [[code rgb]] [code (color-index pal rgb lit)])) ds/spec-palette))))
+(s/fdef spec-colors :args (s/cat :d ::display :lit (s/? ::lit))
+        :ret (s/map-of (set (map first ds/spec-palette)) ::ds/idx))
 
 ;; ------------------------------------------------------------ geometry
 
-(defn- dims [g] [(count (first g)) (count g)])
+(defn- floor-half [a] (if (neg? a) (- (quot (inc (- a)) 2)) (quot a 2)))
 
-(defn- coords [w h] (mapv (fn [r] (mapv (fn [c] [r c]) (range w))) (range h)))
+(defn axis
+  "For each of `d` device cells along one axis, the source coordinate it
+  shows (nil = padding), for `n` source cells at integer scale `k`. Modes:
+  :center, :end (anchored at the far edge: the bottom), :scale (resample; k
+  ignored)."
+  [mode d n k]
+  (if (= mode :scale)
+    (mapv #(quot (* (inc (* 2 %)) n) (* 2 d)) (range d))
+    (let [shown (* n k)
+          off (if (= mode :end) (- d shown) (floor-half (- d shown)))]
+      (mapv (fn [x] (let [u (- x off)] (when (< -1 u shown) (quot u k)))) (range d)))))
+(s/fdef axis
+  :args (s/cat :mode #{:center :end :scale} :d (s/int-in 1 257) :n (s/int-in 1 33) :k (s/int-in 1 29))
+  :ret (s/coll-of (s/nilable nat-int?) :kind vector?)
+  :fn (fn [{{:keys [d n]} :args ret :ret}]
+        (and (= d (count ret)) (every? #(or (nil? %) (< % n)) ret))))
 
-(defn- rotate-cw [g]
-  (let [[w h] (dims g)]
-    (mapv (fn [r] (mapv (fn [c] (get-in g [(- h 1 c) r])) (range h))) (range w))))
-
-(defn- offset [align free]
-  (case align
-    (:top :left) 0
-    (:bottom :right) free
-    (quot free 2)))
-
-(defn- viewport [g {:keys [w h follow anchor-x anchor-y]
-                    :or {anchor-x :center anchor-y :bottom}} lit-at]
-  (let [[gw gh] (dims g)
-        w (min (or w gw) gw)
-        h (min (or h gh) gh)
-        top-lit (when (= follow :top-lit)
-                  (first (keep-indexed (fn [i row] (when (some lit-at row) i)) g)))
-        top (if top-lit (min top-lit (- gh h)) (offset anchor-y (- gh h)))
-        left (offset anchor-x (- gw w))]
-    [(mapv #(subvec % left (+ left w)) (subvec g top (+ top h)))
-     {:top top :left left :w w :h h}]))
-
-(defn- scale [g {:keys [x y]}]
-  (into [] (mapcat (fn [row] (repeat y (into [] (mapcat #(repeat x %)) row)))) g))
-
-(defn- pad [g {:keys [w h align-x align-y] :or {align-x :center align-y :bottom}}]
-  (let [[gw gh] (dims g)
-        left (offset align-x (- w gw))
-        top (offset align-y (- h gh))
-        blank (vec (repeat w nil))]
-    (-> []
-        (into (repeat top blank))
-        (into (map (fn [row] (-> (vec (repeat left nil)) (into row)
-                                 (into (repeat (- w gw left) nil)))))
-              g)
-        (into (repeat (- h gh top) blank)))))
-
-(defn index-map
-  "Run `pipeline` over the coordinates of `frame`. Returns [grid windows]:
-  grid holds the source [row col] shown by each device cell (nil = padding),
-  windows the viewport windows used, in order."
-  [pipeline frame]
-  (let [[w h] (dims frame)
-        lit-at (fn [rc] (boolean (and rc (lit? (get-in frame rc)))))]
-    (reduce (fn [[g windows] [k o]]
-              (case k
-                :rotate   [(nth (iterate rotate-cw g) (mod o 4)) windows]
-                :viewport (let [[g' win] (viewport g o lit-at)] [g' (conj windows win)])
-                :scale    [(scale g o) windows]
-                :pad      [(pad g o) windows]))
-            [(coords w h) []]
-            pipeline)))
-(s/fdef index-map
-  :args (s/cat :pipeline ::ds/pipeline :frame ::ds/rows)
-  :ret (s/tuple (s/coll-of vector? :kind vector?) ::ds/windows))
-
-;; ------------------------------------------------------------ color
-
-(defn- round-div [a b] (quot (+ a (quot b 2)) b))
-
-(def ^:private code-of (into {} (map (fn [[c rgb]] [rgb c])) ds/spec-palette))
-
-(defn- nearest [colors rgb]
-  (let [d2 (fn [c] (reduce + (map (fn [a b] (let [d (- a b)] (* d d))) c rgb)))]
-    (first (reduce (fn [[bi bd] [i c]] (let [d (d2 c)] (if (< d bd) [i d] [bi bd])))
-                   [0 (d2 (first colors))]
-                   (map-indexed vector colors)))))
-
-(defn quantize
-  "The device value for `rgb` in `color`:
-    :rgb      channels rounded to (:bits color)
-    :mono     level of max(r,g,b) (the brightest channel, so every SPEC piece
-              color is full brightness); a lit cell keeps at least :min-lit
-    :palette  the :map entry for a SPEC palette color, else the nearest color
-              (squared RGB distance, ties to the lowest index)"
-  [color rgb]
-  (case (:model color)
-    :rgb     (mapv (fn [c bits] (round-div (* c (dec (bit-shift-left 1 bits))) 255))
-                   rgb (:bits color))
-    :mono    (let [n (:levels color)
-                   v (apply max rgb)
-                   lvl (round-div (* v (dec n)) 255)]
-               (if (pos? v) (max lvl (:min-lit color 0)) lvl))
-    :palette (or (some->> (code-of rgb) (get (:map color)))
-                 (nearest (:colors color) rgb))))
-(s/fdef quantize
-  :args (s/cat :color ::ds/color :rgb ::ds/rgb)
-  :ret any?
-  :fn #(ds/legal-value? (-> % :args :color) (:ret %)))
-
-(defn ->rgb
-  "The RGB a device value shows as. Mono is grey; a sink may tint it."
-  [color v]
-  (case (:model color)
-    :rgb     (mapv (fn [x bits] (round-div (* x 255) (dec (bit-shift-left 1 bits))))
-                   v (:bits color))
-    :mono    (let [g (round-div (* v 255) (dec (:levels color)))] [g g g])
-    :palette (nth (:colors color) v)))
-(s/fdef ->rgb
-  :args (s/with-gen (s/and (s/cat :color ::ds/color :v any?)
-                           #(ds/legal-value? (:color %) (:v %)))
-          #(clojure.spec.gen.alpha/fmap
-            (fn [[c rgb]] [c (quantize c rgb)])
-            (clojure.spec.gen.alpha/tuple (s/gen ::ds/color) (s/gen ::ds/rgb))))
-  :ret ::ds/rgb)
-
-(defn color-loss
-  "What `color` does to the SPEC palette (static): exact? (every color shown
-  as itself), distinct? (no two codes share a device value), merged (the
-  groups of codes that do)."
-  [color]
-  (let [shown (mapv (fn [[code rgb]] [code rgb (quantize color rgb)]) ds/spec-palette)
-        merged (->> (group-by #(nth % 2) shown)
-                    vals
-                    (filter #(> (count %) 1))
-                    (map #(mapv first %))
-                    sort
-                    vec)]
-    {:exact? (every? (fn [[_ rgb v]] (= rgb (->rgb color v))) shown)
-     :distinct? (empty? merged)
-     :merged merged}))
-(s/fdef color-loss :args (s/cat :color ::ds/color) :ret ::ds/color-loss)
-
-(defn palette-table
-  "SPEC code -> the RGB the device shows for it."
-  [color]
-  (into (sorted-map) (map (fn [[code rgb]] [code (->rgb color (quantize color rgb))]))
-        ds/spec-palette))
-(s/fdef palette-table :args (s/cat :color ::ds/color)
-        :ret (s/map-of (set ds/spec-codes) ::ds/rgb))
+(defn placement
+  "[xs ys k] for `policy` on a w x h grid: the source column of each device
+  column, the source row of each device row (nil = padding), and the
+  integer scale (nil for :scale)."
+  [policy w h]
+  (case policy
+    :scale [(axis :scale w spec-w 1) (axis :scale h spec-h 1) nil]
+    :center [(axis :center w spec-w 1) (axis :center h spec-h 1) 1]
+    :crop [(axis :center w spec-w 1) (axis :end h spec-h 1) 1]
+    :letterbox (let [k (max 1 (min (quot w spec-w) (quot h spec-h)))]
+                 [(axis :center w spec-w k) (axis (if (<= (* spec-h k) h) :center :end) h spec-h k) k])))
+(s/fdef placement :args (s/cat :policy ::policy :w ::ds/w :h ::ds/h) :ret vector?)
 
 ;; ------------------------------------------------------------ adapt
 
-(def ^:private blank-frame
-  (vec (repeat ds/spec-h (vec (repeat ds/spec-w black)))))
-
-(defn- visible [grid] (into #{} (comp cat (remove nil?)) grid))
-
-(defn geometry-lossless?
-  "Does every SPEC cell reach the device, whatever the frame? Only a cropping
-  viewport depends on content, and a blank frame already shows its loss."
-  [pipeline]
-  (= (* ds/spec-w ds/spec-h)
-     (count (visible (first (index-map pipeline blank-frame))))))
-(s/fdef geometry-lossless? :args (s/cat :pipeline ::ds/pipeline) :ret boolean?)
-
-(defn lossless?
-  "A profile is lossless when its geometry keeps every cell and its color
-  keeps the SPEC palette codes apart: then `unadapt` recovers the frame."
-  [profile]
-  (let [{:keys [pipeline color]} (:sink profile)]
-    (and (geometry-lossless? pipeline) (:distinct? (color-loss color)))))
-(s/fdef lossless? :args (s/cat :profile ::ds/profile) :ret boolean?)
-
 (defn adapt
-  "SPEC frame -> {:device device-frame :loss report} for `profile`."
-  [profile frame]
-  (let [{:keys [pipeline color]} (:sink profile)
-        [grid windows] (index-map pipeline frame)
-        fill (quantize color black)
-        cells (mapv (fn [row] (mapv (fn [rc] (if rc (quantize color (get-in frame rc)) fill)) row))
-                    grid)
-        [w h] (dims frame)
-        seen (visible grid)
-        lit-src (for [r (range h) c (range w) :when (lit? (get-in frame [r c]))] [r c])
-        [dw dh] (dims cells)]
-    {:device {:w dw :h dh :color color :cells cells}
-     :loss {:display (:id profile)
-            :lossless? (lossless? profile)
-            :geometry {:in [w h] :out [dw dh]
-                       :hidden (- (* w h) (count seen))
-                       :hidden-lit (count (remove seen lit-src))
-                       :padding (count (filter nil? (apply concat grid)))
-                       :windows windows}
-            :color-loss (assoc (color-loss color)
-                               :recolored (count (filter (fn [rc]
-                                                           (let [rgb (get-in frame rc)]
-                                                             (not= rgb (->rgb color (quantize color rgb)))))
-                                                         seen)))}}))
+  "A SPEC frame (17 rows of 9 [r g b]) -> {:display :w :h :cells :loss} on
+  preset :display (default green-building), with :policy (default
+  :letterbox) and :lit (default :keep). The loss report counts source
+  cells not shown (:hidden, :hidden-lit), device cells showing nothing
+  (:padding), shown cells whose device colour differs from the SPEC colour
+  (:recolored), lit cells drawn as index 0 (:darkened), and the SPEC codes
+  that share an index (:merged)."
+  ([frame] (adapt frame {}))
+  ([frame {:keys [display policy lit] :or {display caps/default-display policy default-policy lit :keep}}]
+   (let [{:keys [w h]} (caps/preset display)
+         pal (display-rgb display)
+         [xs ys k] (placement policy w h)
+         q (memoize #(color-index pal % lit))
+         cells (vec (for [y ys x xs] (if (and x y) (q (get-in frame [y x])) 0)))
+         shown (set (for [y ys :when y x xs :when x] [y x]))
+         lit? (fn [yx] (not= black (get-in frame yx)))
+         src (for [y (range spec-h) x (range spec-w)] [y x])]
+     {:display (name display) :w w :h h :cells cells
+      :loss {:policy policy :lit lit :scale k :in [spec-w spec-h] :out [w h]
+             :hidden (- (* spec-w spec-h) (count shown))
+             :hidden-lit (count (remove shown (filter lit? src)))
+             :padding (* (count (filter nil? xs)) h)
+             :padding-rows (count (filter nil? ys))
+             :recolored (count (filter (fn [yx] (let [rgb (get-in frame yx)] (not= rgb (nth pal (q rgb))))) shown))
+             :darkened (count (filter (fn [yx] (and (lit? yx) (zero? (q (get-in frame yx))))) shown))
+             :merged (->> ds/spec-palette
+                          (group-by #(color-index pal (second %) lit))
+                          vals
+                          (map #(vec (sort (map first %))))
+                          (filter #(> (count %) 1))
+                          sort
+                          vec)}})))
 (s/fdef adapt
-  :args (s/cat :profile ::ds/profile :frame ::ds/spec-frame)
-  :ret ::ds/adapted
-  :fn (fn [{:keys [args ret]}]
-        (let [d (:device ret)]
-          (and (= (:w (:profile args)) (:w d))
-               (= (:h (:profile args)) (:h d))))))
+  :args (s/cat :frame ::ds/spec-frame :opts (s/? ::opts))
+  :ret (s/keys :req-un [::ds/w ::ds/h ::ds/cells])
+  :fn (fn [{:keys [ret]}]
+        (and (= (count (:cells ret)) (* (:w ret) (:h ret)))
+             (<= 0 (-> ret :loss :hidden-lit) (-> ret :loss :hidden) (* spec-w spec-h)))))
 
-(defn device-rgb
-  "The device frame as RGB rows: what goes on the wire (w*h*3, row-major)."
-  [{:keys [color cells]}]
-  (mapv (fn [row] (mapv #(->rgb color %) row)) cells))
-(s/fdef device-rgb :args (s/cat :device ::ds/device-frame) :ret ::ds/rows)
+(defn frame->pal16
+  "A SPEC frame as pal16 octets for display `d` (optionally with a 2-byte
+  sequence prefix), ready for the relay."
+  ([frame opts] (codec/encode-pal16 (:cells (adapt frame opts))))
+  ([frame opts seq] (codec/encode-pal16 (:cells (adapt frame opts)) seq)))
+(s/fdef frame->pal16 :args (s/cat :frame ::ds/spec-frame :opts ::opts :seq (s/? ::ds/seq)) :ret ::ds/octets)
 
-(defn unadapt
-  "Invert `adapt` for a lossless profile: the SPEC frame back from the device
-  frame (colors decoded through the SPEC palette). nil for a lossy profile."
-  [profile device]
-  (when (lossless? profile)
-    (let [{:keys [pipeline color]} (:sink profile)
-          [grid _] (index-map pipeline blank-frame)
-          inv (into {} (map (fn [[_ rgb]] [(quantize color rgb) rgb])) ds/spec-palette)
-          pos (reduce (fn [m [rc v]] (if (and rc (not (contains? m rc))) (assoc m rc v) m))
-                      {}
-                      (map vector (apply concat grid) (apply concat (:cells device))))]
-      (mapv (fn [r] (mapv (fn [c] (let [v (pos [r c])] (get inv v (->rgb color v))))
-                          (range ds/spec-w)))
-            (range ds/spec-h)))))
-(s/fdef unadapt
-  :args (s/cat :profile ::ds/profile :device ::ds/device-frame)
-  :ret (s/nilable ::ds/spec-frame))
-
-(defn rgb-bytes
-  "Row-major R,G,B values of `rows` (SPEC §9.4 order), as a vector of ints."
-  [rows]
-  (into [] (comp cat cat) rows))
-(s/fdef rgb-bytes
-  :args (s/cat :rows ::ds/rows)
-  :ret (s/coll-of ::ds/channel :kind vector?)
-  :fn #(= (count (:ret %)) (* 3 (count (-> % :args :rows))
-                              (count (first (-> % :args :rows))))))
+(defn loss-table
+  "What `policy` does on every preset, for a frame with every cell lit:
+  d -> {:w :h :scale :hidden :padding-cells}."
+  ([] (loss-table default-policy))
+  ([policy]
+   (let [lit-frame (vec (repeat spec-h (vec (repeat spec-w [255 255 255]))))]
+     (into (sorted-map)
+           (map (fn [d]
+                  (let [{:keys [w h loss cells]} (adapt lit-frame {:display d :policy policy})]
+                    [d {:w w :h h :scale (:scale loss) :hidden (:hidden loss)
+                        :padding-cells (count (filter zero? cells))}])))
+           caps/display-names))))
+(s/fdef loss-table :args (s/? (s/cat :policy ::policy)) :ret map?)
