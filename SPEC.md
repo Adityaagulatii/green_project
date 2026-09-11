@@ -1,6 +1,6 @@
 # SPEC: 17×9 Tetris for the MIT Green Building facade
 
-**Spec v1** · sealed by the Python reference (`impl/python/engine`) · seal record: [`spec/SEALS.md`](spec/SEALS.md)
+**Spec v2** · sealed by the Hy rebuild (`impl/hy`); v1 was sealed by the Python reference (`impl/python/engine`) · seal record: [`spec/SEALS.md`](spec/SEALS.md)
 
 This is the one canonical document for the game, its simulator and its conformance traces. The README, the plan and every implementation defer to it: a derived document that disagrees with this file is the bug. A run that refutes this file amends it, through the protocol in [`docs/POLYGLOT-PLAN.md`](docs/POLYGLOT-PLAN.md).
 
@@ -663,4 +663,9 @@ Trace set: 14 vectors, `sha256(traces)` = `981baab4279c5c9f93f42eda23f1eb9f2b088
 
 ## Changelog
 
+- **v2** (2026-09-11, Hy). Sealed by the Hy rebuild (`impl/hy`), which passed all 14 v1 traces on its first run and agrees with the Python reference frame by frame (experiment 005: zero divergences). Clarifications only, with no behaviour change: the trace set and its hash are unchanged, and the traces keep `spec_version` 1.
+  - §9.2: the frame right after the countdown that follows a game over queues its events; the hand-over from a flash to a pending game over is unobservable. §6.1: the game-over board is the post-clear board. §12: `active` and `hold` read the state in every phase.
+  - Appendix A: the known-answer vectors. Each trace is `KAV-NN`; Tables A.2a/A.2b are generated from the traces by `spec/conformance/gen_appendix.py`, and the gate rejects a hand-edited table. §1 and §12 defer to Appendix A. Seeds-only vectors are planned for v3.
+  - §9.1: the state-machine-ladder semantics. The phase machine is a CYCLE with the 12 legal edges of Table 9.1 (experiment 006); §11 adds P20 T-legality; the gate runs the schema gate, then the state gate, then the oracle.
+  - §8.4: a non-normative illustration link (`docs/media/casts/countdown.gif`).
 - **v1** (2026-09-10, Python). First sealed spec. Derived from the legacy by reading it and by differential testing against it: zero divergences over Hypothesis-generated and bot-driven action sequences (experiment 001). It defines conformance mode, 19 properties and the trace format.

@@ -40,9 +40,10 @@ HYPOTHESIS_PROFILE=thorough TETRIS_SLOW=1 \
   - §6.1's game-over board is the board *after* the line clear of the same lock.
   - §12's `active` is the state's active piece in every phase.
 - **Revisions found:** none.
+- **2026-09-11, seal run.** `HYPOTHESIS_PROFILE=thorough TETRIS_SLOW=1` over the whole suite, with 600 examples per property and 3000-frame bot games: 157 passed, 0 divergences (05:32–06:08 UTC).
 
 ## Promotion checklist
 
 - [x] Promoted to `impl/hy/tests/test_hy_differential.hy`, run by the root `pytest`.
-- [ ] The clarifications are in SPEC.md v2 (changelog).
-- [ ] Re-run at the v2 seal with `HYPOTHESIS_PROFILE=thorough TETRIS_SLOW=1`.
+- [x] The clarifications are in SPEC.md v2 (changelog).
+- [x] Re-run at the v2 seal with `HYPOTHESIS_PROFILE=thorough TETRIS_SLOW=1`.
