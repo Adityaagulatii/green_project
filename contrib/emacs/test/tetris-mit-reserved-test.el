@@ -332,6 +332,104 @@ viewer of the relay receives are displayed frames, in order."
                                       (buffer-string)))))
         (delete-file file)))))
 
+;;;; The harness's findings (requests reservation-main-20260911T1326Z/1339Z)
+
+(ert-deftest tetris-mit-reserved-test-relay-display-option ()
+  "The display option is --relay-display; Emacs itself takes --display."
+  (should (equal (plist-get (tetris-mit-play-reserved--parse-args
+                             '("--relay" "ws://127.0.0.1:1/tools/display/ws"
+                               "--relay-display" "remote" "--key-file" "k.dlk1"))
+                            :display)
+                 "remote"))
+  (should-error (tetris-mit-play-reserved--parse-args
+                 '("--relay" "ws://127.0.0.1:1/tools/display/ws" "--display" "remote")))
+  (should (string-match-p "unknown argument --display"
+                          (cadr (should-error (tetris-mit-play-reserved--parse-args
+                                               '("--display" "remote"))))))
+  (should (string-prefix-p "usage" (cadr (should-error (tetris-mit-play-reserved--parse-args
+                                                        '("--relay-display" "remote")))))))
+
+(ert-deftest tetris-mit-reserved-test-relay-display-reaches-the-batch ()
+  "Emacs passes --relay-display through: the entry point runs, and says usage.
+Emacs moves a --display to the front of the arguments, so -Q is no longer
+first and it exits with 255 before any function runs."
+  (with-temp-buffer
+    (let ((status (call-process
+                   (expand-file-name invocation-name invocation-directory)
+                   nil '(t t) nil "--batch" "-Q"
+                   "-L" (expand-file-name "contrib/emacs" tetris-mit-root)
+                   "-l" "tetris-mit-reserved" "-f" "tetris-mit-play-reserved-batch"
+                   "--relay-display" "remote")))
+      (should (equal (list status (buffer-string)) (list 2 (buffer-string))))
+      (should (string-match-p "tetris-mit-play-reserved-batch: usage" (buffer-string)))
+      (should-not (string-match-p "Unknown option" (buffer-string))))))
+
+(ert-deftest tetris-mit-reserved-test-slot-end-takes-precedence ()
+  "Frames are judged up to the relay's cut; the slot's end is exit 4.
+At exp the relay announces a lease with holder null and sends a black
+frame, which the source never showed: that mismatch is after the cut."
+  (let* ((f1 (make-string 153 4)) (f2 (make-string 153 1)) (black (make-string 153 0))
+         (log `((text ((op . "caps") (w . 9) (h . 17)))
+                (text ((op . "lease") (holder . nil)))
+                (text ((op . "lease") (holder . "emacs@ert")))
+                (binary ,f1) (binary ,f2)
+                (text ((op . "lease") (holder . nil)))
+                (binary ,black)))
+         (split (tetris-mit-reserved--frames-before-cut log))
+         (shown (list f1 f2)))
+    (should (equal split (cons (list f1 f2) (list black))))
+    (should (tetris-mit-reserved--subsequence-p (car split) shown))
+    (should-not (tetris-mit-reserved--subsequence-p (append (car split) (cdr split)) shown))
+    ;; the verdict: unauthorized, then the slot's end, then the checks
+    (should (= 4 (tetris-mit-reserved--verdict 'ended t nil nil)))
+    (should (= 4 (tetris-mit-reserved--verdict 'ended nil nil nil)))
+    (should (= 4 (tetris-mit-reserved--verdict 'ended t nil t)))
+    (should (= 3 (tetris-mit-reserved--verdict 'unauthorized t nil t)))
+    (should (= 0 (tetris-mit-reserved--verdict 'released t nil t)))
+    (should (= 1 (tetris-mit-reserved--verdict 'released t nil nil)))
+    (should (= 1 (tetris-mit-reserved--verdict 'released nil nil t)))
+    (should (= 1 (tetris-mit-reserved--verdict 'lost t nil t)))))
+
+(ert-deftest tetris-mit-reserved-test-slot-ends-mid-game-on-the-relay ()
+  "The key's exp comes 3 s into KAV-12: the scripted user stops, exit 4.
+The frames the relay got inside the slot are displayed frames, and the
+digests match over the frames played."
+  (tetris-mit-reserved-test--with-relay url
+    (let* ((now (float-time))
+           (exp (+ (ceiling now) (if (< (- (ceiling now) now) 0.5) 3 2)))
+           (result (tetris-mit-play-reserved-run
+                    :relay url :display "remote"
+                    :key (tetris-mit-reserved-test--mint
+                          (tetris-mit-reserved-test--claims :exp exp :display "remote"))
+                    :trace (tetris-mit-test--trace "12-game-over-reset"))))
+      (should (equal (list (plist-get result :verdict) (plist-get result :exit))
+                     '("SLOT ENDED" 4)))
+      (should (eq (plist-get result :state) 'ended))
+      (should (< 20 (plist-get result :played) 447))
+      (should (equal (car (plist-get result :digests)) (cdr (plist-get result :digests))))
+      (should (plist-get result :relay-match))
+      (should (= (plist-get result :frames) 447)))))
+
+(ert-deftest tetris-mit-reserved-test-pacing-follows-the-granted-fps ()
+  "Frames are (1 + margin)/fps apart, with the fps from `granted', not 30."
+  (dolist (fps '(10 60))
+    (let* ((times nil)
+           (link (tetris-mit-display-source-make-link
+                  :send-text #'ignore
+                  :send-binary (lambda (_bytes) (push (float-time) times))
+                  :close #'ignore))
+           (source (tetris-mit-display-source-open "green-building" :link link :name "x")))
+      (unwind-protect
+          (progn
+            (tetris-mit-display-source-receive source (tetris-mit-dsrc-test--granted 9 17 fps))
+            (should (= (tetris-mit-display-source-fps source) fps))
+            (tetris-mit-display-source-offer source (tetris-mit-test--rows [255 0 0]))
+            (tetris-mit-display-source-offer source (tetris-mit-test--rows [0 0 255]))
+            (should (tetris-mit--wait-until (lambda () (= (length times) 2)) 2))
+            (should (>= (- (car times) (cadr times))
+                        (- (/ (+ 1.0 tetris-mit-display-source-pace-margin) fps) 0.002))))
+        (tetris-mit-display-source-stop source)))))
+
 (provide 'tetris-mit-reserved-test)
 
 ;;; tetris-mit-reserved-test.el ends here

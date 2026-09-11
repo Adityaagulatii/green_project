@@ -303,13 +303,14 @@ This is the user's scenario for experiment 002, signed display lease keys: "the 
 TETRIS_MIT_PYTHON=/path/to/python \
 emacs --batch -Q -L contrib/emacs -l tetris-mit-reserved -f tetris-mit-play-reserved-batch \
       --relay ws://127.0.0.1:PORT/tools/display/ws --key-file KEY.dlk1 \
-      [--trace spec/conformance/traces/07-hard-drop.json] [--display green-building] \
+      [--trace spec/conformance/traces/07-hard-drop.json] [--relay-display green-building] \
       [--host 127.0.0.1 --port ENGINE_PORT]
 ```
 
+- **The display option is `--relay-display`.** Emacs takes `--display` for itself (the X display) from any position, moves it to the front, and then fails on `-Q` with exit 255.
 - Without `--port`, the command starts a private lockstep engine server.
-- It checks the KAV's digests on the Emacs display.
-- A relay viewer, attached through the bridge with no key needed, records what the display receives. Each of those frames must be one the Emacs display showed, in order.
+- The scripted user plays until the trace ends or the lease does, for instance when the key's slot ends. The KAV's digests are checked on the Emacs display over the frames played.
+- A relay viewer, attached through the bridge with no key needed, records what the display receives, up to the relay's cut: the first `lease` with holder null after ours. Each of those frames must be one the Emacs display showed, in order. At `exp` the relay then sends a black frame that Emacs never showed, so it is counted separately (`relay_frames_after_end`).
 - It prints a report, then `RESULT {json}`, and exits with one of these codes:
 
 | Exit | Meaning |
@@ -318,13 +319,13 @@ emacs --batch -Q -L contrib/emacs -l tetris-mit-reserved -f tetris-mit-play-rese
 | 1 | FAIL |
 | 2 | usage or setup error |
 | 3 | `unauthorized`: the report shows the detail |
-| 4 | the key's slot ended during the game |
+| 4 | the key's slot ended during the game. This takes precedence over the frame check (the steward's ruling). |
 
 Against the mock relay (no lease secrets), KAV-07 gives:
 
 ```
-play-reserved: KAV-07: 121/121 digests match on the Emacs display
-play-reserved: source sent … frames (… dropped, … refused); relay viewer saw …, each one a displayed frame, in order
+play-reserved: KAV-07: 121/121 digests match on the Emacs display, over 121 of 121 frames played
+play-reserved: source sent … frames (… dropped, … refused); relay viewer saw … in the slot, each one a displayed frame, in order; 0 after its end
 PASS
 ```
 
