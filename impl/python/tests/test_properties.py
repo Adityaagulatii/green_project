@@ -13,9 +13,18 @@ from hypothesis import strategies as st
 
 from tetris_engine import ACTIONS, PALETTE, core, render, render_codes
 from tetris_engine import tables as T
-from tetris_engine.core import (CLEARING, COUNTDOWN, EMPTY_BOARD, GAMEOVER,
-                                PLAYING, Held, Piece, apply_action, collides,
-                                drop_row)
+from tetris_engine.core import (
+    CLEARING,
+    COUNTDOWN,
+    EMPTY_BOARD,
+    GAMEOVER,
+    PLAYING,
+    Held,
+    Piece,
+    apply_action,
+    collides,
+    drop_row,
+)
 from tetris_engine.frame import codes_digest
 from tetris_engine.prng import seed_state
 from tetris_sim.bot import Bot
