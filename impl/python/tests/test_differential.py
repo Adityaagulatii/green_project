@@ -19,8 +19,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from legacy_harness import (EngineHarness, LegacyHarness, collapse,
-                            legacy_visible, load_legacy)
+from legacy_harness import (
+    EngineHarness,
+    LegacyHarness,
+    collapse,
+    legacy_visible,
+    load_legacy,
+)
 from tetris_engine import ACTIONS
 from tetris_engine import tables as T
 from tetris_engine.core import collides

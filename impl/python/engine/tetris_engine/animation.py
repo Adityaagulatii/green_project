@@ -3,19 +3,20 @@ per 1/30 s tick. The game is one Animation; embodied behaviours (gestures,
 mood colours, world transitions) are others.
 """
 
-from typing import Any, Protocol, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Protocol
 
 from . import core
 from .frame import render
 
-Frame = Tuple[Tuple[Tuple[int, int, int], ...], ...]
+Frame = tuple[tuple[tuple[int, int, int], ...], ...]
 
 
 class Animation(Protocol):
     def init(self) -> Any:
         """Return the initial state."""
 
-    def tick(self, state: Any, events: Sequence[Tuple[str, bool]]) -> Any:
+    def tick(self, state: Any, events: Sequence[tuple[str, bool]]) -> Any:
         """Advance one frame; must be pure (no I/O, no clock)."""
 
     def render(self, state: Any) -> Frame:

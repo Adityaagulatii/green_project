@@ -16,9 +16,12 @@ from fractions import Fraction
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "engine"))
 
-from tetris_engine import core, frame  # noqa: E402
+from tetris_engine import (  # noqa: E402
+    conformance,  # noqa: E402
+    core,
+    frame,
+)
 from tetris_engine import tables as T  # noqa: E402
-from tetris_engine import conformance  # noqa: E402
 
 
 def ccw_release_keeps_dcd():
@@ -66,8 +69,8 @@ MUTANTS = {
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] not in MUTANTS:
-        print("usage: mutants.py {%s} TRACE..." % "|".join(MUTANTS),
-              file=sys.stderr)
+        names = "|".join(MUTANTS)
+        print(f"usage: mutants.py {{{names}}} TRACE...", file=sys.stderr)
         return 2
     MUTANTS[argv[0]]()
     return conformance.main(argv[1:])
