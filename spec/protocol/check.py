@@ -182,7 +182,7 @@ class TcpConn:
     async def recv(self, timeout):
         try:
             line = await asyncio.wait_for(self.reader.readline(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         except (ConnectionError, ValueError):
             return Closed()
@@ -225,7 +225,7 @@ class WsConn:
         from websockets.exceptions import ConnectionClosed
         try:
             data = await asyncio.wait_for(self.ws.recv(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         except ConnectionClosed as exc:
             rcvd = exc.rcvd
@@ -649,7 +649,8 @@ def session_mode(args):
                 ks = list(range(0, t["frames"], t["digest_every"]))
                 if (t["frames"] - 1) % t["digest_every"]:
                     ks.append(t["frames"] - 1)
-                bad = [kk for kk, d in zip(ks, t["digests"]) if frames.get(kk) != d]
+                bad = [kk for kk, d in zip(ks, t["digests"], strict=False)
+                       if frames.get(kk) != d]
                 if bad:
                     found.append(f"{name}: oracle: frame {bad[0]} digest differs "
                                  f"from {t['name']}")

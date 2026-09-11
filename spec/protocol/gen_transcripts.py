@@ -105,7 +105,7 @@ def checkpoints(trace):
     if len(ks) != len(trace["digests"]):
         raise GenError(f"{trace['name']}: {len(trace['digests'])} digests for "
                        f"{len(ks)} checkpoints")
-    return dict(zip(ks, trace["digests"]))
+    return dict(zip(ks, trace["digests"], strict=True))
 
 
 def from_trace(path):

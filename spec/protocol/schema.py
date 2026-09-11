@@ -52,7 +52,7 @@ def _equal(a, b):
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_equal(a[k], b[k]) for k in a)
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(_equal(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(_equal(x, y) for x, y in zip(a, b, strict=True))
     return type(a) is type(b) and a == b
 
 

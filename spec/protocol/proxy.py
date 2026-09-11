@@ -25,7 +25,6 @@ import argparse
 import asyncio
 import hashlib
 import json
-import os
 import shlex
 import signal
 import socket

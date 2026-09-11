@@ -38,12 +38,12 @@ def run_driver(cmd, paths):
 
 def first_difference(ref, got):
     """None if equal, else a short description of the first difference."""
-    for i, (a, b) in enumerate(zip(ref["digests"], got["digests"])):
+    for i, (a, b) in enumerate(zip(ref["digests"], got["digests"], strict=False)):
         if a != b:
             return f"digest #{i}"
     if len(ref["digests"]) != len(got["digests"]):
         return "digest count"
-    for k, (a, b) in enumerate(zip(ref["phases"], got["phases"])):
+    for k, (a, b) in enumerate(zip(ref["phases"], got["phases"], strict=False)):
         if a != b:
             return f"phase@{k} {b}!={a}"
     if len(ref["phases"]) != len(got["phases"]):
