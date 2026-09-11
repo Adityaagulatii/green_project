@@ -147,7 +147,7 @@ These are the readings this kit and the demo relay take where the spec is silent
 6. **Sequence prefix:** `literal` is the default (seq ≥ last accepted), with `serial` (RFC 1982) as an option. A frame with no prefix is never dropped by sequence and leaves the last accepted value alone. A new lease resets the sequence.
 7. **Rate:** a GCRA at the display's fps with a 20% jitter tolerance. Accepted frames are at least 0.8/fps apart, and the rate never exceeds fps over time. Only accepted frames renew the lease or count for the rate.
 8. **The reserved format** only decides how binary is read (rgb24 or pal16). Hex text is accepted from any holder, and so are BLP and MCUF binary. A holder that reserves again is granted again, with the new format.
-9. **Viewer cap:** a 33rd viewer is closed with WebSocket code 1013 ("try again later").
+9. **Viewer cap:** the demo relay closes a 33rd viewer with WebSocket code 1013 ("try again later"). The spec names no code, so the conformance suite checks only that the 33rd viewer gets no `caps` and no frames, and accepts any close. babashka's http-kit can only close with 1000.
 10. **`lease` is re-sent** to viewers whenever the whole-second `expires` changes, so a viewer's `tick` never marks a live display idle. Release sends `lease holder:null` but no black frame; only expiry sends the black frame.
 11. **BLP and MCUF headers** are 12 bytes, big-endian: BLP is magic, frame count, width, height; MCUF is magic, height, width, channels, maxval.
     - A BLP value other than 0 or 1 is `bad-format`.
@@ -183,3 +183,10 @@ These are the readings this kit and the demo relay take where the spec is silent
 13. **`caps` against a fixed grid:**
     - Should a refused `caps` also withhold fps, format and palette (it does here)?
     - Should frames still fold after the refusal (they do here)?
+14. **The expiry message has two shapes.** The Rules write it as `{"op":"lease","holder":null}`, while the Viewer section's `lease` carries display, holder and expires.
+    - `schemas/lease.json` accepts both.
+    - The relays here send the full form.
+    - `reduce_event` folds either (`expiry.json` has the short form).
+    - `check_session` resolves a short form to the one display its viewer watches.
+    - The displays-cljc workstream found this.
+15. **A text message that does not start with `{` is a hex frame** by the first-character rule. That includes a JSON value such as `[]` or `"view"`, so a non-holder gets `not-holder` for it (`messages.json`; found by displays-cljc).

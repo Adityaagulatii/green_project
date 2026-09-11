@@ -678,7 +678,8 @@ def reduce_event(state: dict, event) -> dict:
         return {**state, "w": w, "h": h, "fps": int(event["fps"]), "format": event["format"],
                 "palette": list(event["palette"]), "cells": bytes(w * h)}
     if op == "lease":
-        holder, expires = event["holder"], event["expires"]
+        # the Rules' expiry message {"op":"lease","holder":null} has no expires
+        holder, expires = event["holder"], event.get("expires")
         return {**state, "holder": holder, "expires": None if expires is None else int(expires),
                 "status": "idle" if holder is None else state["status"]}
     return {**state, "error": {"reason": event["reason"]}}

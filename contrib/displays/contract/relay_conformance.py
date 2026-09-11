@@ -11,8 +11,10 @@
         --viewer-url ws://127.0.0.1:8765/tools/display/ws
 
 With no options it starts `python -m demo relay` with UDP, a hex fan-out on
-tetris and the boundary displays edge-1x1 and edge-256x256, and stops it
-with SIGTERM at the end.
+tetris and the boundary displays 1x1, 256x256, 256x1 and 1x256, and stops
+it with SIGTERM at the end.  Waits are WAIT (8 s) for anything expected,
+so a stalled host slows a failure rather than causing one; the 33rd viewer
+may be refused with any close code.
 
 Displays are read from the relay's capabilities.json (served next to the
 WebSocket) when it has one, else from the pinned presets; tests needing a
@@ -47,7 +49,7 @@ from contract import display_contract as dc
 
 HERE = pathlib.Path(__file__).resolve().parent
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
-WAIT = 4.0
+WAIT = 8.0   # a loaded shared host can stall a relay for seconds
 DEMO_CMD = (f"{shlex.quote(sys.executable)} -m demo relay --port 0 --udp-port 0 "
             "--fanout tetris=hex --extra-display edge-1x1=1x1 --extra-display edge-256=256x256 "
             "--extra-display edge-256x1=256x1 --extra-display edge-1x256=1x256")
@@ -397,7 +399,7 @@ def test_expiry_counts_from_the_last_frame_or_renew(target):
             await asyncio.sleep(0.4)
         await s.send({"op": "renew"})
         t = time.monotonic()
-        await v.control("lease", free, timeout=5)
+        await v.control("lease", free, timeout=WAIT)
         assert 0.8 <= time.monotonic() - t <= 2.6
         assert await v.frame() == dc.black_frame(caps["w"], caps["h"], caps["format"])
         await s.send(bytes(n))
@@ -487,7 +489,7 @@ def test_hex_fan_out_converts(target):
         cells = bytes(i % 16 for i in range(caps["w"] * caps["h"]))
         await s.send(dc.encode_pal16(cells, seq=9))
         assert await v.frame() == dc.encode_hex(cells, caps["w"], caps["h"])
-        await v.control("lease", free, timeout=5)
+        await v.control("lease", free, timeout=WAIT)
         assert await v.frame() == dc.black_frame(caps["w"], caps["h"], "hex")
         await s.close()
         await v.close()

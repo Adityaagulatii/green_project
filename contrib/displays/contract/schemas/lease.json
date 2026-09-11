@@ -6,10 +6,9 @@
   "type": "object",
   "required": [
     "op",
-    "display",
-    "holder",
-    "expires"
+    "holder"
   ],
+  "$comment": "display and expires are optional: the spec's Viewer section sends them, but its Rules write the expiry as {\"op\":\"lease\",\"holder\":null}. Relays here send the full form (contract/README.md, open question 14).",
   "properties": {
     "op": {
       "const": "lease"

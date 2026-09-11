@@ -362,9 +362,16 @@ class Checker:
             return self.find(t, v, f"relay sent an invalid message: {(errs or [m.get('op')])[0]}")
         if m["op"] != "lease":
             return
-        d = self.displays.get(m["display"])
+        name = m.get("display")
+        if name is None:   # the Rules' short form {"op":"lease","holder":null}
+            viewing = sorted(self.conns[v].viewing)
+            if len(viewing) != 1:
+                return self.find(t, v, f"lease without display to a connection viewing "
+                                       f"{len(viewing)} displays")
+            name = viewing[0]
+        d = self.displays.get(name)
         if d is None:
-            return self.find(t, v, f"lease for an unknown display {m['display']!r}")
+            return self.find(t, v, f"lease for an unknown display {name!r}")
         if m["holder"] is None:
             if d.holder is not None:
                 if t < d.renewed + d.ttl_lo - SLACK:

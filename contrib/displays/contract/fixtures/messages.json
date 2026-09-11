@@ -44,7 +44,7 @@
     {"message":{"op":"caps","display":"green-building","w":9,"h":17,"fps":30,"format":"pal16","palette":["#000000","#0000AA","#00AA00","#00AAAA","#AA0000","#AA00AA","#AA5500","#AAAAAA","#555555","#5555FF","#55FF55","#55FFFF","#FF5555","#FF55FF","#FFFF55","#FFF"]},"valid":false},
     {"message":{"op":"granted","lease":"a1b2","w":9,"h":17,"fps":30,"format":"rgb24","palette":["#000000","#0000AA","#00AA00","#00AAAA","#AA0000","#AA00AA","#AA5500","#AAAAAA","#555555","#5555FF","#55FF55","#55FFFF","#FF5555","#FF55FF","#FFFF55","#FFFFFF"],"expires":1789000000},"valid":true},
     {"message":{"op":"lease","display":"green-building","holder":null,"expires":null},"valid":true},
-    {"message":{"op":"lease","display":"green-building","holder":null},"valid":false},
+    {"message":{"op":"lease","display":"green-building","holder":null},"valid":true},
     {"message":{"op":"busy","holder":"x"},"valid":false},
     {"message":{"op":"error","reason":"not-holder"},"valid":true},
     {"message":{"op":"error","reason":"bad-frame-length"},"valid":true},
@@ -56,8 +56,8 @@
     {"message":{"op":"dance"},"valid":false,"relay":"unknown-op"},
     {"message":{"display":"green-building"},"valid":false,"relay":"bad-format"},
     {"message":{"op":3},"valid":false,"relay":"bad-format"},
-    {"message":[],"valid":false,"relay":"bad-format"},
-    {"message":"view","valid":false,"relay":"bad-format"}
+    {"message":[],"valid":false,"relay":"not-holder"},
+    {"message":"view","valid":false,"relay":"not-holder"}
   ],
   "raw": [
     {"text":"{oops","relay":"bad-format"},
