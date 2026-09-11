@@ -98,13 +98,13 @@
   (let [opt (fn [k ok?] (or (not (contains? m k)) (ok? (get m k))))]
     (boolean
      (case op
-      "view" (opt :display nonblank?)
-      "reserve" (and (nonblank? (:name m))
-                     (opt :display nonblank?)
-                     (opt :ttl #(some-> (integral %) (>= 1)))
-                     (opt :format #(contains? source-formats %)))
-      ("renew" "release") true
-      false))))
+       "view" (opt :display nonblank?)
+       "reserve" (and (nonblank? (:name m))
+                      (opt :display nonblank?)
+                      (opt :ttl #(some-> (integral %) (>= 1)))
+                      (opt :format #(contains? source-formats %)))
+       ("renew" "release") true
+       false))))
 (s/fdef message-ok? :args (s/cat :m map?) :ret boolean?)
 
 (defn ttl-ms
@@ -127,7 +127,7 @@
   [ms]
   (quot (+ ms 999) 1000))
 (s/fdef expires-s :args (s/cat :ms nat-int?) :ret nat-int?
-        :fn #(<= (* 1000 (:ret %)) (+ 999 (-> % :args :ms))))
+  :fn #(<= (* 1000 (:ret %)) (+ 999 (-> % :args :ms))))
 
 (defn reordered?
   "The sequence rule, in one place: is a frame with 2-byte sequence `seq`
@@ -145,7 +145,7 @@
                    :literal (< seq last)
                    :serial (>= (mod (- seq last) 65536) 32768))))))
 (s/fdef reordered? :args (s/cat :rule (s/? #{:literal :serial}) :last (s/nilable ::ds/seq) :seq (s/nilable ::ds/seq))
-        :ret boolean?)
+  :ret boolean?)
 
 (defn too-fast?
   "The fps rule, in one place: GCRA virtual scheduling (ITU-T I.371), as
@@ -162,14 +162,14 @@
   [tat ts fps tol]
   (boolean (and tat (< (* ts fps) (- tat tol)))))
 (s/fdef too-fast? :args (s/cat :tat (s/nilable nat-int?) :ts nat-int? :fps ::ds/fps :tol (s/int-in 0 1000))
-        :ret boolean?)
+  :ret boolean?)
 
 (defn tat-after
   "When the next frame is due (ms * fps) after accepting one at `ts`."
   [tat ts fps]
   (+ (max (* ts fps) (or tat 0)) 1000))
 (s/fdef tat-after :args (s/cat :tat (s/nilable nat-int?) :ts nat-int? :fps ::ds/fps) :ret pos-int?
-        :fn #(> (:ret %) (* (-> % :args :ts) (-> % :args :fps))))
+  :fn #(> (:ret %) (* (-> % :args :ts) (-> % :args :fps))))
 
 ;; ------------------------------------------------------------ config, state
 

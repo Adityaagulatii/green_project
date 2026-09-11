@@ -2,7 +2,6 @@
   "The relay's fold: scenarios for every rule and boundary, and invariants
   over random logs, with the simulated scheduler writing expiry events."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
-            [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [tetris.displays.caps :as caps]
             [tetris.displays.codec :as codec]

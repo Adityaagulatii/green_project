@@ -241,7 +241,7 @@
   [v maxval top]
   (quot (+ (* 2 v top) maxval) (* 2 maxval)))
 (s/fdef scale :args (s/and (s/cat :v nat-int? :maxval pos-int? :top #{15 255}) #(<= (:v %) (:maxval %)))
-        :ret nat-int? :fn #(<= (:ret %) (-> % :args :top)))
+  :ret nat-int? :fn #(<= (:ret %) (-> % :args :top)))
 
 (defn parse-interop
   "A BLP or MCUF packet -> {:kind :w :h :channels :maxval :payload}, or

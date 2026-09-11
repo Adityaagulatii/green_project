@@ -76,7 +76,7 @@
    (let [pal (display-rgb d)]
      (into (sorted-map) (map (fn [[code rgb]] [code (color-index pal rgb lit)])) ds/spec-palette))))
 (s/fdef spec-colors :args (s/cat :d ::display :lit (s/? ::lit))
-        :ret (s/map-of (set (map first ds/spec-palette)) ::ds/idx))
+  :ret (s/map-of (set (map first ds/spec-palette)) ::ds/idx))
 
 ;; ------------------------------------------------------------ geometry
 

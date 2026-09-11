@@ -58,7 +58,7 @@
                             "page" (str base "/?d=<display>")})
         (update "displays"
                 (fn [ds]
-                  (into {} (map (fn [[k {:keys [w h fps format extra?]}]]
+                  (into {} (map (fn [[k {:keys [w h fps format]}]]
                                   [k (-> (or (get ds k)
                                              {"w" w "h" h "palette" "cga" "kind" "mock" "levels" 16 "mono" false
                                               "note" "mock-only display of the bb relay"})
@@ -234,7 +234,7 @@
       (or (second (last pairs)) "pal16")
       (into {} pairs))))
 (s/fdef parse-fanout :args (s/cat :vs (s/nilable (s/coll-of string?)) :extras (s/nilable (s/coll-of map?)))
-        :ret (s/or :every string? :per-display map?))
+  :ret (s/or :every string? :per-display map?))
 
 (defn -main
   "bb relay [--port 8765] [--default green-building] [--fanout pal16|NAME=hex] [--extra-display N=WxH] [--log F] [--record F]"

@@ -40,7 +40,7 @@
   [w h]
   (vec (repeat (* w h) 0)))
 (s/fdef blank :args (s/cat :w ::ds/w :h ::ds/h) :ret ::ds/cells
-        :fn #(= (count (:ret %)) (* (-> % :args :w) (-> % :args :h))))
+  :fn #(= (count (:ret %)) (* (-> % :args :w) (-> % :args :h))))
 
 (defn integral
   "x as a long when it is an integer, or a finite float with no fraction
