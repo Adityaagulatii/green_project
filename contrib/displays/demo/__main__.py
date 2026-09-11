@@ -1,4 +1,4 @@
-"""python -m demo {run,relay,source,view,list} -- see README.md."""
+"""python -m demo {run,relay,source,view,list,sim} -- see README.md."""
 import argparse
 import asyncio
 import json
@@ -7,6 +7,7 @@ import signal
 import sys
 
 from contract import display_contract as dc
+from contract import dlk1
 
 from . import source, view
 from .producers import DEMOS
@@ -40,9 +41,19 @@ def _fanout(items):
     return per or None
 
 
+def _secrets(path):
+    if path is None:
+        return None
+    try:
+        return dlk1.load_secrets(path)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--lease-secret {path}: {e}") from None
+
+
 async def _relay(args):
     relay = Relay(fps=args.fps, page=args.page, default=args.default, seq_rule=args.seq_rule,
-                  extra=args.extra_display, fanout=_fanout(args.fanout), record=args.record)
+                  extra=args.extra_display, fanout=_fanout(args.fanout), record=args.record,
+                  lease_secrets=_secrets(args.lease_secret))
     async with relay.serve(args.host, args.port, udp_port=args.udp_port) as url:
         http_base = url.replace("ws://", "http://", 1).rsplit("/", 1)[0]
         print(f"mock relay {url}  (capabilities: {http_base}/capabilities.json)", flush=True)
@@ -129,6 +140,9 @@ def main(argv=None):
                     help="the format to fan out (caps.format): pal16 (default) or hex")
     sp.add_argument("--seq-rule", choices=dc.SEQ_RULES, default="literal",
                     help="how a sequence prefix orders frames (default literal, the spec's text)")
+    sp.add_argument("--lease-secret", type=pathlib.Path, metavar="FILE",
+                    help="dlk1 lease secrets, lines of `kid hex64`: every reserve then needs "
+                         "a signed key (an experiment extension, not v0.2.1)")
 
     sp = sub.add_parser("source", help="send a demo to a running relay")
     common(sp, url=True)

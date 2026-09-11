@@ -30,6 +30,10 @@ Findings, one per line; exit status 1 if there are any, 0 if none:
             half a period, a lease never exceeds its fps over time, and a frame
             1.5 periods after the last accepted is not dropped for rate
   viewers   no display has more than 32 viewers; a refused viewer was the 33rd
+
+--lease-keys reads a session of a relay in the dlk1 experiment extension (not
+v0.2.1): an unauthorized refusal is expected, the holder is the key's sub, and a
+lease ends no later than the key's exp.
 """
 from __future__ import annotations
 
@@ -42,9 +46,11 @@ from dataclasses import dataclass, field
 
 try:
     from . import display_contract as dc
+    from . import dlk1
 except ImportError:  # run as a script
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
     from contract import display_contract as dc
+    from contract import dlk1
 
 SLACK = 0.25   # seconds: the recorder's clock against the relay's timers
 
@@ -69,6 +75,7 @@ class Display:
     viewers: set = field(default_factory=set)
     expiring: bool = False
     black_due: set = field(default_factory=set)
+    cap: float | None = None     # a dlk1 key's exp (--lease-keys)
 
 
 @dataclass
@@ -83,8 +90,9 @@ def is_control(payload):
 
 class Checker:
     def __init__(self, records, *, seq_rule="literal", default=None,
-                 max_viewers=dc.MAX_VIEWERS, udp_ttl=None):
+                 max_viewers=dc.MAX_VIEWERS, udp_ttl=None, lease_keys=False):
         self.records, self.seq_rule, self.max_viewers = records, seq_rule, max_viewers
+        self.lease_keys = lease_keys
         self.findings: list[str] = []
         meta = next((r.get("payload") for r in records if r.get("kind") == "meta"), None)
         caps = meta if isinstance(meta, dict) else dc.capabilities()
@@ -168,14 +176,20 @@ class Checker:
 
     # ------------------------------------------------------------ leases
 
+    def deadline(self, d, lo=True):
+        """When D's lease ends at the earliest (LO) or the latest: ttl after the
+        last renewal, and never past a dlk1 key's exp (--lease-keys)."""
+        end = d.renewed + (d.ttl_lo if lo else d.ttl_hi)
+        return end if d.cap is None else min(end, d.cap)
+
     def lease_state(self, d, t):
         """live, ambiguous (the ttl window, where the relay may have expired it
         unseen) or gone."""
         if d.holder is None:
             return "gone"
-        if t < d.renewed + d.ttl_lo - SLACK:
+        if t < self.deadline(d) - SLACK:
             return "live"
-        if t > d.renewed + d.ttl_hi + SLACK:
+        if t > self.deadline(d, lo=False) + SLACK:
             return "gone"
         return "ambiguous"
 
@@ -201,7 +215,7 @@ class Checker:
         self.check_pace(d, t)
         if d.holder is not None and self.conns[d.holder].held == d.name:
             self.conns[d.holder].held = None
-        d.holder = d.hname = None
+        d.holder = d.hname = d.cap = None
         d.accepted, d.expiring = [], why == "expired"
 
     def check_pace(self, d, t):
@@ -232,6 +246,9 @@ class Checker:
             return self.expect(t, c, got, "unknown-op", f"op {op!r}")
         if dc.check_message(m):
             return self.expect(t, c, got, "bad-format", f"malformed {op}")
+        if op == "reserve" and self.lease_keys and any(
+                isinstance(x, dict) and x.get("reason") == "unauthorized" for x in got):
+            return                                  # refused by the dlk1 extension
         if op in ("view", "reserve"):
             d = self.displays.get(m.get("display") or self.default)
             if d is None:
@@ -294,14 +311,18 @@ class Checker:
         for k, v in want.items():
             if reply.get(k) != v:
                 self.find(t, c, f"granted.{k} {reply.get(k)!r}, want {v!r}")
+        claims = dlk1.peek(m.get("key")) if self.lease_keys else None
         ttl = min(int(m.get("ttl", dc.MAX_TTL)), dc.MAX_TTL)
+        if claims:
+            ttl = min(ttl, claims["exp"] - t)       # granted.expires = min(now + ttl, exp)
         left = reply["expires"] - t
         if left > ttl + 1 + SLACK or ("ttl" in m and left < ttl - SLACK):
             self.find(t, c, f"granted.expires is {left:.1f} s away for a ttl of {ttl}")
         held = self.conns[c].held
         if held is not None and held != d.name:
             self.end(self.displays[held], t, "released")
-        self.grant(d, c, m["name"], fmt, t, reply["expires"])
+        self.grant(d, c, claims["sub"] if claims else m["name"], fmt, t, reply["expires"])
+        d.cap = claims["exp"] if claims else None
 
     def frame(self, c, t, data, got):
         name, st = self.held(c, t)
@@ -358,6 +379,9 @@ class Checker:
     def sent_control(self, v, t, text):
         m = json.loads(text)
         errs = dc.check_message(m)
+        if (errs and self.lease_keys and m.get("op") == "error"
+                and m.get("reason") == "unauthorized" and isinstance(m.get("detail"), str)):
+            errs = []                               # the dlk1 extension's refusal
         if errs or m.get("op") not in dc.FROM_RELAY:
             return self.find(t, v, f"relay sent an invalid message: {(errs or [m.get('op')])[0]}")
         if m["op"] != "lease":
@@ -374,8 +398,8 @@ class Checker:
             return self.find(t, v, f"lease for an unknown display {name!r}")
         if m["holder"] is None:
             if d.holder is not None:
-                if t < d.renewed + d.ttl_lo - SLACK:
-                    self.find(t, v, f"{d.name} expired {d.renewed + d.ttl_lo - t:.2f} s early")
+                if t < self.deadline(d) - SLACK:
+                    self.find(t, v, f"{d.name} expired {self.deadline(d) - t:.2f} s early")
                 self.end(d, t, "expired")
             if d.expiring and v in d.viewers:
                 d.black_due.add(v)
@@ -430,10 +454,12 @@ def main(argv=None):
     ap.add_argument("--seq-rule", choices=dc.SEQ_RULES, default="literal")
     ap.add_argument("--default", help="the relay's default display, if no meta record")
     ap.add_argument("--max-viewers", type=int, default=dc.MAX_VIEWERS)
+    ap.add_argument("--lease-keys", action="store_true",
+                    help="a relay in the dlk1 extension: unauthorized, holder = sub, cap = exp")
     args = ap.parse_args(argv)
     records, bad = load(args.session)
     findings = bad + check(records, seq_rule=args.seq_rule, default=args.default,
-                           max_viewers=args.max_viewers)
+                           max_viewers=args.max_viewers, lease_keys=args.lease_keys)
     for f in findings:
         print(f)
     ins = sum(r.get("dir") == "in" for r in records)

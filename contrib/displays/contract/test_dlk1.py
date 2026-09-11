@@ -145,16 +145,25 @@ def test_secrets_file():
 
 @pytest.mark.skipif(not os.path.exists(VECTORS), reason=f"{VECTORS} not published yet")
 def test_published_vectors():
+    """The reservation workstream's vectors (display-reservation 2970f63, `bb
+    dlk1:vectors`): each is a reserve at unix time `now` to a relay holding
+    exactly `secrets` whose default display is `relay_default`.  Here the
+    verifier alone; demo/test_dlk1_vectors.py sends them to the relay."""
     doc = json.load(open(VECTORS, encoding="utf-8"))
-    secrets = {k: bytes.fromhex(v) for k, v in doc.get("secrets", {"test": dlk1.TEST_SECRET.hex()}
-                                                     ).items()}
-    cases = doc["cases"] if isinstance(doc, dict) else doc
+    assert doc["format"] == "dlk1-vectors" and doc["version"] == 1
+    secrets = {s["kid"]: bytes.fromhex(s["hex"]) for s in doc["secrets"]}
+    assert not {s["kid"] for s in doc["not_in_secrets"]} & set(secrets)
     wrong = []
-    for c in cases:
-        want = c.get("detail", c.get("expect"))
-        want = None if want in (None, "ok", "valid") else want
-        got = dlk1.verify(c.get("key"), secrets, display=c["display"],
-                          fmt=c.get("format", "pal16"), now=c["now"])[0]
-        if got != want:
-            wrong.append((c.get("name"), want, got))
-    assert wrong == []
+    for v in doc["vectors"]:
+        r, e = v["reserve"], v["expect"]
+        detail, claims = dlk1.verify(r.get("key"), secrets,
+                                     display=r.get("display") or v["relay_default"],
+                                     fmt=r.get("format", "pal16"), now=v["now"])
+        if e["ok"]:
+            got = None if detail else {"holder": claims["sub"],
+                                       "expires": min(v["now"] + min(r["ttl"], 900), claims["exp"])}
+            if got != {"holder": e["holder"], "expires": e["expires"]}:
+                wrong.append((v["name"], e, detail or got))
+        elif e["error"] != {"op": "error", "reason": "unauthorized", "detail": detail}:
+            wrong.append((v["name"], e["error"], detail))
+    assert wrong == [] and len(doc["vectors"]) >= 59
