@@ -3,9 +3,10 @@
 # sealed traces in spec/conformance/traces. PASS means zero findings.
 #
 # Before believing a PASS, the gate verifies the verifier:
-#   1. a corrupted copy of the traces MUST be rejected;
+#   1. a corrupted copy of the traces MUST be rejected, through every
+#      driver (so no driver can pass by echoing the traces' own answers);
 #   2. every mutant (deliberately wrong) engine MUST be rejected;
-#   3. the reference MUST pass.
+#   3. every implementation MUST pass.
 #
 #   bin/verify.sh              self-test, then all implementations
 #   bin/verify.sh --no-selftest
@@ -17,7 +18,19 @@ PY=${PYTHON:-/scratch/venvs/tetris-py/bin/python}
 RUN="$PY $ROOT/spec/conformance/run.py"
 TRACES="$ROOT/spec/conformance/traces"
 PY_DRIVER="env PYTHONPATH=$ROOT/impl/python/engine $PY -m tetris_engine.conformance"
+HY_DRIVER="env PYTHONPATH=$ROOT/impl/hy $PY -m hy -m tetris_hy.conformance"
 MUTANTS="ccw-release-keeps-dcd gravity-ceil-cadence level-target-plus-six standard-180-kicks no-ghost"
+
+# Implementations, in phase order. Later phases add a name here and a
+# line to driver().
+IMPLS="python hy"
+driver() {
+    case $1 in
+        python) echo "$PY_DRIVER" ;;
+        hy) echo "$HY_DRIVER" ;;
+        *) echo "unknown implementation $1" >&2; return 1 ;;
+    esac
+}
 
 status=0
 fail() { echo "GATE FINDING: $*"; status=1; }
@@ -37,11 +50,13 @@ d = t["digests"][len(t["digests"]) // 2]
 t["digests"][len(t["digests"]) // 2] = ("0" if d[0] != "0" else "1") + d[1:]
 json.dump(t, open(p, "w"), separators=(",", ":"))
 EOF
-    if $RUN --traces "$tmp" --impl "$PY_DRIVER" >/dev/null 2>&1; then
-        fail "self-test: corrupted trace was accepted"
-    else
-        echo "self-test ok: corrupted trace rejected"
-    fi
+    for impl in $IMPLS; do
+        if $RUN --traces "$tmp" --impl "$(driver "$impl")" >/dev/null 2>&1; then
+            fail "self-test: corrupted trace was accepted by the $impl driver"
+        else
+            echo "self-test ok: corrupted trace rejected ($impl driver)"
+        fi
+    done
 
     # 2. mutant engines
     for m in $MUTANTS; do
@@ -63,8 +78,10 @@ run() {
 
 [ "${1:-}" = "--no-selftest" ] || selftest
 
-# 3. implementations (later phases append their drivers here)
-run python "$PY_DRIVER"
+# 3. implementations
+for impl in $IMPLS; do
+    run "$impl" "$(driver "$impl")"
+done
 
 if [ "$status" -eq 0 ]; then echo "GATE: PASS"; else echo "GATE: FAIL"; fi
 exit "$status"

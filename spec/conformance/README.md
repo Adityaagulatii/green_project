@@ -32,10 +32,14 @@ Each implementation provides a **driver** command:
   python3 spec/conformance/run.py --impl "env PYTHONPATH=impl/python/engine python3 -m tetris_engine.conformance" --verbose
   ```
 - **Gate.** `bin/verify.sh` is the single gate. It verifies the verifier first, then runs every implementation's driver. The gate PASSes only with zero findings:
-  - a corrupted trace must be rejected;
+  - a corrupted trace must be rejected, through every driver, so that no driver can pass by echoing the traces' own answers;
   - deliberately wrong engines (mutants) must be rejected;
-  - the reference must pass.
-- **Adding an implementation.** Add a `run <name> "<driver>"` line to `bin/verify.sh`.
+  - every implementation must pass.
+- **Adding an implementation.** Add its name to `IMPLS` in `bin/verify.sh`, and a line for it to `driver()`. The drivers so far:
+  ```
+  python   env PYTHONPATH=impl/python/engine python3 -m tetris_engine.conformance
+  hy       env PYTHONPATH=impl/hy python3 -m hy -m tetris_hy.conformance
+  ```
 
 ## Trace-set hash
 
