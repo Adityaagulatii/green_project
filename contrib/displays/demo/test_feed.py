@@ -254,6 +254,34 @@ def test_the_feed_releases_and_returns_when_the_game_goes_away(end):
     assert done["game_end"].startswith(want[end]), done["game_end"]
 
 
+def test_the_frames_count_ends_a_game_slower_than_fps():
+    """D3 (requests/reservation-displays-20260911T1403Z-feed-frames-race.md): the
+    frame that reaches --frames and the pump's end come in one wake-up while
+    the send loop is idle (a game slower than the display's fps).  The game
+    here sends exactly 4 frames at 10 fps to a 30 fps display, then keeps its
+    socket open, so the count is the only way out."""
+    game = Game(FRAMES, 0.1, end="hang")
+
+    async def go():
+        stack = []
+        try:
+            relay = Relay(lease_secrets=SECRETS)
+            async with relay.serve() as url:
+                gurl = await game_url(game, "tcp", stack)
+                try:
+                    return (await asyncio.wait_for(feed.run(gurl, url, "dc32", key=key("dc32"),
+                                                            frames=len(FRAMES)), 10),
+                            relay.stats["released"])
+                finally:
+                    game.released.set()
+        finally:
+            for s in stack:
+                s.close()
+    done, released = asyncio.run(asyncio.wait_for(go(), 30))
+    assert done["op"] == "done" and done["game_end"] == "frames" and released == 1
+    assert done["received"] == done["sent"] == len(FRAMES)
+
+
 def test_a_paused_game_keeps_the_feed():
     game = Game(FRAMES, 0.05, pause_at=2, pause=1.5)    # silent 1.5 s, but answers pings
 

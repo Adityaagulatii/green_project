@@ -262,11 +262,14 @@ async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed
         last = -math.inf
         try:
             while st["lost"] is None:
-                await wake.wait()
-                wake.clear()
+                # the state first, after every send and every wake-up: a frame
+                # to send, or the game over (D3: the frame that reaches --frames
+                # and the pump's end can come in one wake-up while this loop idles)
                 if st["pending"] is None:
                     if st["finished"]:
                         break
+                    await wake.wait()
+                    wake.clear()
                     continue
                 wait = last + period - time.monotonic()
                 if wait > 0:
