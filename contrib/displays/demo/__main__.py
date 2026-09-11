@@ -1,4 +1,4 @@
-"""python -m demo {run,relay,source,view,list,sim} -- see README.md."""
+"""python -m demo {run,relay,source,view,list,sim,feed} -- see README.md."""
 import argparse
 import asyncio
 import json
@@ -83,6 +83,14 @@ async def _source(args):
     return 0 if result.get("op") == "done" else 1
 
 
+async def _feed(args):
+    from . import feed
+    result = await feed.run(args.game, args.url, args.display, key=_key(args), fmt=args.format,
+                            name=args.name, ttl=args.ttl, frames=args.frames, seq=args.seq)
+    print(json.dumps(result))
+    return 0 if result.get("op") == "done" else 1
+
+
 async def _view(args):
     stats = await view.run(args.url, args.display, frames=args.frames)
     print(f"\n{stats['frames']} frames")
@@ -163,6 +171,21 @@ def main(argv=None):
     sp.add_argument("--name", default="demo@jail")
     keys(sp)
 
+    sp = sub.add_parser("feed", help="bridge a game server (a contract-v1 viewer) to a display "
+                                     "(a source), honouring the display's capabilities")
+    sp.add_argument("--game", default="tcp://127.0.0.1:1709",
+                    help="tcp://HOST:PORT or ws://HOST:PORT/tetris-17x9, on loopback")
+    sp.add_argument("--display", "-d", default=DEFAULT_DISPLAY)
+    sp.add_argument("--url", default="ws://127.0.0.1:8765/tools/display/ws",
+                    help="the display relay")
+    sp.add_argument("--format", default="pal16", choices=source.FORMATS)
+    sp.add_argument("--frames", type=int, help="stop after this many game frames")
+    sp.add_argument("--ttl", type=int, default=60)
+    sp.add_argument("--seq", action="store_true",
+                    help="prefix frame_no mod 65536 (PROTOCOL section 5.4)")
+    sp.add_argument("--name", default="feed@jail")
+    keys(sp)
+
     sp = sub.add_parser("view", help="view a display on a running relay")
     common(sp, url=True)
     sp.add_argument("--frames", type=int)
@@ -200,7 +223,8 @@ def main(argv=None):
             return sim.cli(args)
         except KeyboardInterrupt:
             return 130
-    runner = {"run": _run, "relay": _relay, "source": _source, "view": _view}[args.cmd]
+    runner = {"run": _run, "relay": _relay, "source": _source, "view": _view,
+              "feed": _feed}[args.cmd]
     try:
         return asyncio.run(runner(args)) or 0
     except KeyboardInterrupt:

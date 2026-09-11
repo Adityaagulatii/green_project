@@ -66,6 +66,53 @@ The default display in this repo is **green-building** (9×17, aspect 1.5, gap 0
 
 With `--page`, the relay serves an HTML sink at `/tools/display/`. `?view=NAME` on the WebSocket URL subscribes on connect. The user's canvas page (inputs/display.html) predates v0.2.1 and expects RGB frames.
 
+## Lease keys and the game feed (experiment 002, not part of v0.2.1)
+
+In this experiment the reservation system and the display share a secret. The reservation system signs a dlk1 key for one principal, one display, one slot and a list of formats. The relay checks the key offline: it never calls the reservation system. The format is `/scratch/work/tetris-parallel/inputs/dlk1-display-lease-key.md`, and the verifier is `../contract/dlk1.py`.
+
+```sh
+$PY -m demo relay --port 8765 --lease-secret secrets.txt     # lines of `kid hex64`
+$PY -m demo source bars -d green-building --key-file key.txt # or --key dlk1....
+$PY -m demo feed --game tcp://127.0.0.1:1709 -d dc32 --key-file key.txt [--format hex] [--seq]
+```
+
+- **relay `--lease-secret`:**
+  - Every `reserve` needs a valid `key`. A refused one gets `{"op":"error","reason":"unauthorized","detail":CODE}`.
+  - The holder is shown as the key's `sub`.
+  - `granted.expires` is min(now + ttl, exp), and no renewal or frame extends the lease past `exp`.
+  - At `exp` the lease ends as on a ttl expiry: `lease` with holder null, then a black frame, then `not-holder` for the old holder.
+  - UDP packets are dropped, because they carry no key. Viewers need no key.
+  - Without the flag the relay is exactly v0.2.1: `relay_conformance.py` runs 88/88.
+- **source `--key` or `--key-file`** sends the key in `reserve`.
+- **feed** bridges a game to a display (docs/PROTOCOL.md §5.4).
+  - **Game side:** it is a contract-v1 game viewer over `tcp://` (JSON lines) or `ws://…/tetris-17x9` (subprotocol `tetris-17x9.v1`).
+  - **Display side:** it is a display source. It reserves with the key, and first checks against the key's own claims that the key allows the requested format.
+  - **Capabilities:** it honours what `granted` announces.
+    - **Geometry:** the SPEC 17×9 frame goes onto w×h by the cljc adapter's default loss policy, `:letterbox`. That is the largest integer scale, centred; a grid too short for the field crops the top rows, so the stack stays visible.
+    - **Colour:** by its default lit rule, `:lit :keep`: black goes to 0 and any other colour to the nearest of indices 1..15, so a lit SPEC cell never goes dark.
+    - **Pace:** at most fps. When the game is faster, the latest frame wins and nothing is queued.
+    - **Format:** the one reserved.
+  - **Parity:** `feed.placement`, `feed.axis` and `feed.color_index` mirror `tetris.displays.adapt/placement`, `axis` and `color-index` (branch contrib/displays-cljc, d0cf331). `fixtures/adapt-cljc.json` is that adapter's own output, from running bb once, for 4 SPEC frames on all 12 presets. `test_feed.py` requires the same indices in all 48 cases.
+
+`test_lease_keys.py` covers:
+- every refusal detail;
+- the holder shown as `sub`;
+- the `expires` cap;
+- the lease ending at `exp` despite frames and renewals;
+- no change without secrets;
+- UDP refused;
+- the source's key;
+- check_session with `--lease-keys`;
+- the CLI.
+
+`test_feed.py` covers:
+- the cljc parity;
+- the letterbox;
+- the lit rule;
+- end to end, over TCP and WS, in pal16, hex and rgb24: a lockstep contract-v1 game server (a stand-in in the test), the feed, the relay with secrets, and a viewer that sees exactly the cljc adapter's pal16;
+- pacing, and the last frame of a burst;
+- refusals.
+
 ## Simulator: every preset, as it looks
 
 `python -m demo sim` simulates a display: a demo plays on any of the 12 presets, or a relay's display is viewed as a remote sink. Frames go through the contract's `reduce_event`, the sink's fold: caps, lease, then each frame. Each cell is drawn with its preset's grid, cell aspect (width over height) and gap. The gap is drawn as dark masonry `#1C1C1C`, which is distinct from index 0 (black, unlit). Colours come from the palette through the spec's level rule, so gb shows 4 levels, mono 2 (the Blinkenlights lamps are on or off) and grey8 8 (arcade).
