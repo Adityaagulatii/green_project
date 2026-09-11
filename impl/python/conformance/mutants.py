@@ -16,9 +16,12 @@ from fractions import Fraction
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "engine"))
 
-from tetris_engine import core, frame  # noqa: E402
+from tetris_engine import (  # noqa: E402
+    conformance,  # noqa: E402
+    core,
+    frame,
+)
 from tetris_engine import tables as T  # noqa: E402
-from tetris_engine import conformance  # noqa: E402
 
 
 def ccw_release_keeps_dcd():
@@ -54,20 +57,40 @@ def no_ghost():
     frame.compose = lambda board, piece, ghost=True: original(board, piece, False)
 
 
+def illegal_edge_gameover_playing():
+    """A lying driver: the engine is right, but its phase log jumps from a
+    game over straight into play (the first countdown frame after a game
+    over is reported as "playing"). The digests and the final observation
+    are untouched, so only the runner's state gate (T-legality, SPEC P20)
+    can reject it."""
+    original = conformance.run_trace
+
+    def patched(trace):
+        result = original(trace)
+        phases = result["phases"]
+        for k in range(1, len(phases)):
+            if phases[k - 1] == "gameover" and phases[k] == "countdown":
+                phases[k] = "playing"
+                break
+        return result
+    conformance.run_trace = patched
+
+
 MUTANTS = {
     "ccw-release-keeps-dcd": ccw_release_keeps_dcd,
     "gravity-ceil-cadence": gravity_ceil_cadence,
     "level-target-plus-six": level_target_plus_six,
     "standard-180-kicks": standard_180_kicks,
     "no-ghost": no_ghost,
+    "illegal-edge-gameover-playing": illegal_edge_gameover_playing,
 }
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] not in MUTANTS:
-        print("usage: mutants.py {%s} TRACE..." % "|".join(MUTANTS),
-              file=sys.stderr)
+        names = "|".join(MUTANTS)
+        print(f"usage: mutants.py {{{names}}} TRACE...", file=sys.stderr)
         return 2
     MUTANTS[argv[0]]()
     return conformance.main(argv[1:])

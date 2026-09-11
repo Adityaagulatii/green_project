@@ -17,7 +17,7 @@ def encode(frames, info=None):
     153-char palette-index string."""
     palette, index, runs = [], {}, []
     info = info or [None] * len(frames)
-    for frame, hud in zip(frames, info):
+    for frame, hud in zip(frames, info, strict=True):
         chars = []
         for row in frame:
             for rgb in row:
