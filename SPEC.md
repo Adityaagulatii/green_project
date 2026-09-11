@@ -204,7 +204,7 @@ A `hold` press with `hold_available` false, and any `hold` release, does nothing
    - If any row is full, remember the **flash board**: `B` with every full row entirely `W`. The display shows it for 5 frames (§8.2).
    - Then, for each full row in ascending order: delete it, insert an empty playfield row at row 1 (row 0 is untouched), and score it (§6.2).
 3. **Spawn.** Draw the next piece (§9.3) at spawn and set `hold_available := true`.
-4. **Game over.** If the new piece collides, the game is over. Set `high_score := max(high_score, score)`, remember the board as the game-over board, and start the game-over sequence (§8.3). If the lock came from a hard drop, the new game will start with `dcd = 0`; otherwise it starts with `dcd = 2` (**QUIRK-11**).
+4. **Game over.** If the new piece collides, the game is over. Set `high_score := max(high_score, score)`, remember the board as the game-over board, and start the game-over sequence (§8.3). *(Clarification, v2: the game-over board is `B` after step 2's clear, which is what the fill-up of §8.3 shows; the flash, if any, shows the board before it.)* If the lock came from a hard drop, the new game will start with `dcd = 0`; otherwise it starts with `dcd = 2` (**QUIRK-11**).
 
 The clear and the spawn take effect in the state immediately. The flash and game-over sequences only change what is *displayed*, and when the rest of the logical frame runs (§9.2).
 
@@ -355,6 +355,7 @@ A resumed frame can suspend again. After a game over, the resumed events apply t
 Events delivered while suspended (`E_k` during an animation):
 - **during a flash**, and on the frame the flash resumes, they are **queued**. They are applied at the beginning of the next fresh logical frame, before that frame's own events.
 - **during a game over or a countdown** they are **discarded** (QUIRK-12). So is anything already queued.
+- *Clarification (v2).* The frame right after the 90 countdown frames that follow a game over (the slot of QUIRK-10) is not a countdown frame. It resumes the suspended frame, and its own events are **queued**, like those of the frame on which a flash resumes: this is the pseudocode's `queue := queue ++ E; RESUME`. At boot, frame 91 is instead a fresh logical frame, and its events apply in it. On the frame on which a flash hands over to a pending game over, queuing and discarding are indistinguishable, because the reset (§8.3) empties the queue.
 
 Normative pseudocode:
 
@@ -494,6 +495,8 @@ The **observation** `final` is:
   "hold": null | {"shape": ..., "rotation": 0..3},
   "frame_hex": the 459 bytes of the final frame as lowercase hex }
 ```
+
+*Clarification (v2).* `active` and `hold` read the state in every phase, not only while playing. During a game-over sequence, `active` is the piece whose spawn collided; from the reset on, it is the new game's first piece.
 
 An implementation **passes** a trace if its digests and its observation are all equal to the trace's. The gate `bin/verify.sh` runs every implementation against every trace. It passes only with **zero findings**; there is no warning tier.
 
