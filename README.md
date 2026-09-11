@@ -1,12 +1,17 @@
 # 17×9 Tetris: polyglot fork
 
-Tetris on MIT's Green Building, whose facade has **153 lit windows**: a 17×9 display running at 30 FPS. This fork turns the original Python game into a **language-neutral spec** and rebuilds it four times, **Python → Hy → Clojure/ClojureScript → Guile 3**, each rebuild held to the same conformance traces. It is also the starting kit for [Sundai Hack 140](docs/events/2026-09-13-sundai-hack-140.md) (Sun Sep 13), where the building becomes a body, and for the live demo on the building (Tue Sep 29).
+Tetris on MIT's Green Building, whose facade has **153 lit windows**: a 17×9 display running at 30 FPS. This fork turns the original Python game into a **language-neutral spec** and rebuilds it in turn, **Python → Hy → Clojure/ClojureScript → Elisp → Guile 3**, each rebuild held to the same conformance traces. It is also the starting kit for [Sundai Hack 140](docs/events/2026-09-13-sundai-hack-140.md) (Sun Sep 13), where the building becomes a body, and for the live demo on the building (Tue Sep 29).
 
 - **[SPEC.md](SPEC.md).** The canonical, versioned spec. Everything else defers to it.
 - **[docs/POLYGLOT-PLAN.md](docs/POLYGLOT-PLAN.md).** The rebuild plan, the seal protocol and the methodology.
 - **[docs/events/2026-09-13-sundai-hack-140.md](docs/events/2026-09-13-sundai-hack-140.md).** The hack brief and our notes on it.
 - **[spec/conformance/](spec/conformance/README.md).** The trace format, the runner and the driver protocol.
 - **[spec/SEALS.md](spec/SEALS.md).** One line per sealed spec version.
+- **[docs/PROTOCOL.md](docs/PROTOCOL.md).** The game-server protocol, for remote play and for displays.
+- **[docs/media/](docs/media/README.md).** Snapshots, asciinema casts, the §8.4 countdown GIF and a known-answer replay.
+- **[docs/FREEBSD-TETRIS.md](docs/FREEBSD-TETRIS.md).** BSD `tetris(6)` and Emacs `tetris.el` on the 9×17 board.
+- **[contrib/emacs/](contrib/emacs/).** Play or drive the game from Emacs.
+- **`gmake help`.** Lists the run, demo, test, lint and verify targets.
 - **[experiments/](experiments/).** Investigations, such as the legacy differential, collision bounds and gravity arithmetic.
 
 ## Layout
