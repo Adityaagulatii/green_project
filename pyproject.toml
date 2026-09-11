@@ -1,0 +1,46 @@
+# The Python reference implementation (spec v1) as a uv project, so that from
+# the repo root
+#
+#   uv run python -m tetris_sim --trace spec/conformance/traces/08-hold.json --ansi-final
+#
+# works with no PYTHONPATH. The engine and the simulator are stdlib-only.
+# Tool settings live next door: ruff.toml (ruff) and pytest.ini (pytest).
+[project]
+name = "tetris-17x9"
+version = "1.0.0"
+description = "17x9 Tetris on MIT's Green Building: engine and building simulator (spec v1 reference)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "hypothesis>=6",
+  # FreeBSD has no wheels for these two; never build them from source there.
+  # Use the packages instead: pkg install -r FreeBSD-latest ruff py312-numpy
+  # numpy is needed only by the legacy differential (the original tetris.py).
+  "numpy>=2; platform_system != 'FreeBSD'",
+  "ruff>=0.16; platform_system != 'FreeBSD'",
+]
+
+[tool.uv]
+# Plain `uv run` / `uv sync` installs only the project, which is stdlib-only, so
+# the simulator runs wherever uv does. Tests: `uv run --group dev python -m pytest`
+# (the Makefile uses the jail venv when it exists).
+default-groups = []
+# Never compile dev tools from source. Recent hypothesis releases build with
+# maturin (Rust), and none of these three ship FreeBSD wheels: fail fast instead.
+no-build-package = ["hypothesis", "numpy", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Two top-level packages from two source roots.
+[tool.hatch.build.targets.wheel]
+packages = ["impl/python/engine/tetris_engine", "impl/python/sim/tetris_sim"]
+
+# Editable installs (uv sync / uv run) put exactly these roots on sys.path.
+[tool.hatch.build]
+dev-mode-dirs = ["impl/python/engine", "impl/python/sim"]
