@@ -5,13 +5,19 @@ signed key, the holder is the key's sub, and the lease ends at exp.
 """
 import asyncio
 import json
+import pathlib
+import re
+import signal
 import socket
+import subprocess
+import sys
 import time
 
 from contract import check_session, dlk1
 from contract import display_contract as dc
 from websockets.asyncio.client import connect
 
+from demo import source
 from demo.relay import Relay
 
 SECRETS = {dlk1.TEST_KID: dlk1.TEST_SECRET}
@@ -153,6 +159,16 @@ def test_udp_is_refused_in_secret_mode():
     run(go())
 
 
+def test_the_source_sends_its_key():
+    async def go():
+        async with Relay(lease_secrets=SECRETS).serve() as url:
+            done = await source.run(url, GB, "bars", frames=3, fps=20, key=key(sub="src@lab"))
+            assert done["op"] == "done" and done["errors"] == {}
+            refused = await source.run(url, GB, "bars", frames=1)
+            assert refused == {"op": "error", "reason": "unauthorized", "detail": "missing"}
+    run(go())
+
+
 def test_check_session_knows_lease_keys(tmp_path):
     rec = tmp_path / "keys.jsonl"
 
@@ -176,3 +192,32 @@ def test_check_session_knows_lease_keys(tmp_path):
     assert check_session.check(records, lease_keys=True) == []
     plain = check_session.check(records)
     assert plain and any("unauthorized" in f for f in plain)
+
+
+def test_the_cli_takes_a_secrets_file_and_the_source_a_key_file(tmp_path):
+    secrets, keyfile = tmp_path / "secrets", tmp_path / "key"
+    secrets.write_text(f"# test only\ntest {dlk1.TEST_SECRET.hex()}\n")
+    keyfile.write_text(key(sub="cli@lab") + "\n")
+    here = pathlib.Path(__file__).resolve().parents[1]
+    proc = subprocess.Popen([sys.executable, "-m", "demo", "relay", "--port", "0",
+                             "--lease-secret", str(secrets)], cwd=here,
+                            stdout=subprocess.PIPE, text=True)
+    try:
+        url = re.search(r"ws://\S+", proc.stdout.readline()).group(0)
+        ok = subprocess.run([sys.executable, "-m", "demo", "source", "bars", "--url", url,
+                             "-d", GB, "--seconds", "0.2", "--key-file", str(keyfile)],
+                            cwd=here, capture_output=True, text=True, timeout=30)
+        assert ok.returncode == 0 and json.loads(ok.stdout)["op"] == "done", ok.stderr
+        no = subprocess.run([sys.executable, "-m", "demo", "source", "bars", "--url", url,
+                             "-d", GB, "--seconds", "0.2"], cwd=here, capture_output=True,
+                            text=True, timeout=30)
+        assert no.returncode == 1 and json.loads(no.stdout)["detail"] == "missing"
+    finally:
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(10)
+    bad = tmp_path / "bad"
+    bad.write_text("test 00\n")
+    r = subprocess.run([sys.executable, "-m", "demo", "relay", "--port", "0",
+                        "--lease-secret", str(bad)], cwd=here, capture_output=True, text=True,
+                       timeout=30)
+    assert r.returncode != 0 and "lease-secret" in r.stderr

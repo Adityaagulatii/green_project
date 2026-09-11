@@ -41,15 +41,19 @@ def encoder(fmt, w, h, palette, seq):
 
 
 async def run(url, display, demo, *, name="demo@jail", ttl=60, frames=None, seed=0,
-              seq=False, fps=None, fmt="pal16"):
+              seq=False, fps=None, fmt="pal16", key=None):
     """Reserve DISPLAY in format FMT and send FRAMES frames of DEMO (forever if
-    None), paced at the display's fps (or FPS, if lower), then release.
-    Return a summary dict, or the relay's reply if the reserve was not granted."""
+    None), paced at the display's fps (or FPS, if lower), then release.  KEY,
+    a dlk1 lease key, goes in the reserve (a relay started with lease secrets
+    wants one).  Return a summary dict, or the relay's reply if the reserve
+    was not granted."""
     check_url(url)
     async with connect(url) as ws:
         reserve = {"op": "reserve", "name": name, "ttl": ttl, "format": fmt}
         if display is not None:
             reserve["display"] = display
+        if key is not None:
+            reserve["key"] = key
         await ws.send(json.dumps(reserve))
         reply = json.loads(await ws.recv())
         if reply.get("op") != "granted":

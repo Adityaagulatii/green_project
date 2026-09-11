@@ -41,6 +41,14 @@ def _fanout(items):
     return per or None
 
 
+def _key(args):
+    """The dlk1 key of --key K, or of --key-file F (its first line); None."""
+    if args.key_file:
+        lines = pathlib.Path(args.key_file).read_text(encoding="utf-8").split()
+        return lines[0] if lines else None
+    return args.key
+
+
 def _secrets(path):
     if path is None:
         return None
@@ -70,7 +78,7 @@ async def _source(args):
     frames = round(args.seconds * args.fps) if args.seconds else None
     result = await source.run(args.url, args.display, args.demo, frames=frames, name=args.name,
                               seed=args.seed, seq=args.seq, ttl=args.ttl, fps=args.fps,
-                              fmt=args.format)
+                              fmt=args.format, key=_key(args))
     print(json.dumps(result))
     return 0 if result.get("op") == "done" else 1
 
@@ -144,10 +152,16 @@ def main(argv=None):
                     help="dlk1 lease secrets, lines of `kid hex64`: every reserve then needs "
                          "a signed key (an experiment extension, not v0.2.1)")
 
+    def keys(sp):
+        g = sp.add_mutually_exclusive_group()
+        g.add_argument("--key", help="a dlk1 lease key, sent in the reserve")
+        g.add_argument("--key-file", type=pathlib.Path, help="a file holding the dlk1 key")
+
     sp = sub.add_parser("source", help="send a demo to a running relay")
     common(sp, url=True)
     producer(sp)
     sp.add_argument("--name", default="demo@jail")
+    keys(sp)
 
     sp = sub.add_parser("view", help="view a display on a running relay")
     common(sp, url=True)
