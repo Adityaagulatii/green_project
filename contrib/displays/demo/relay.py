@@ -43,9 +43,10 @@ DEFAULT_TTL = 300
 MAX_TTL = 900
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
-# d= name -> (w, h), from the user's display-profiles table (2026-09-11)
+# d= name -> (w, h), from the user's display-profiles table (2026-09-11);
+# cga40 is IBM PC CGA 40-column text mode (320 x 200 on a 4:3 tube, pixel aspect 6:5)
 PROFILES = {
-    "tetris": (10, 20), "green-building": (9, 17), "dc32": (10, 18),
+    "cga40": (40, 25), "tetris": (10, 20), "green-building": (9, 17), "dc32": (10, 18),
     "gameboy": (10, 18), "trs80": (10, 12), "c64": (10, 20),
     "ws2812": (16, 16), "hub75": (64, 32), "remote": (9, 17),
 }
