@@ -333,7 +333,12 @@ def test_p15_hold(seed, bp, held):
 def test_p15_one_hold_per_lock(seed, sch):
     n, sched, bot = sch
     for prev, _, s in trajectory(seed, n, sched, bot):
-        if not prev.hold_available and not s.hold_available:
+        # With hold used (so hold is non-empty) and no piece drawn in the
+        # step, there was no lock, so no second hold may happen. A lock
+        # followed by a hold within one step is legal (thorough run found
+        # seed=0, sch=(2, {0: [hold], 1: [hold]}, bot)).
+        if not prev.hold_available and not s.hold_available \
+                and s.spawns == prev.spawns:
             assert s.hold == prev.hold
 
 
