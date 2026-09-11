@@ -425,6 +425,25 @@ def test_release_and_close_free_the_display(target):
     run(go())
 
 
+@pytest.mark.choice
+def test_the_holder_may_reserve_again(target):
+    """The spec says only that "a reserve while held returns busy". Here a
+    reserve from the holder itself is granted again, with the new format
+    (the gatekeeper relies on this to switch pal16 -> hex); viewers see the
+    same holder."""
+    async def go():
+        v, caps = await viewer(target, "tetris")
+        s, g = await holder(target, "tetris", name="again", fmt="pal16")
+        await s.send({"op": "reserve", "name": "again", "display": "tetris", "format": "hex"})
+        again = await s.control(where=lambda m: m["op"] in ("granted", "busy", "error"))
+        assert again["op"] == "granted" and again["format"] == "hex", again
+        assert (await v.control("lease", lambda m: m["holder"]))["holder"] == "again"
+        cells = bytes(i % 16 for i in range(caps["w"] * caps["h"]))
+        await s.send(dc.encode_hex(cells, caps["w"], caps["h"]))
+        assert await v.frame() == fan(cells, caps)
+    run(go())
+
+
 # ------------------------------------------------------------------ frames
 
 def frame_cases(grid, fmt):
