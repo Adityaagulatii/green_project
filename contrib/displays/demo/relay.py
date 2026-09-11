@@ -321,11 +321,13 @@ class Relay:
         except ConnectionClosed:
             pass
         finally:
+            # the close first: the lease it ends (lease null to the viewers) is
+            # its consequence, and a reader of the record must see it so
+            self._rec(conn.id, "in", "close", {"code": ws.close_code})
             for d in conn.viewing:
                 d.viewers.pop(conn, None)
             if conn.held is not None:
                 self._end(conn.held, expired=False)
-            self._rec(conn.id, "in", "close", {"code": ws.close_code})
 
     async def _control(self, conn, text):
         try:

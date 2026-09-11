@@ -82,6 +82,7 @@ class Display:
 class Conn:
     held: str | None = None
     viewing: set = field(default_factory=set)
+    view_lease: set = field(default_factory=set)   # displays whose view reply lease is due
 
 
 def is_control(payload):
@@ -285,6 +286,7 @@ class Checker:
                 self.find(t, c, f"caps.{k} {caps.get(k)!r}, want {v!r}")
         d.viewers.add(c)
         self.conns[c].viewing.add(d.name)
+        self.conns[c].view_lease.add(d.name)
 
     def reserve(self, c, t, d, m, got):
         reply = next((x for x in got if isinstance(x, dict)
@@ -396,13 +398,21 @@ class Checker:
         d = self.displays.get(name)
         if d is None:
             return self.find(t, v, f"lease for an unknown display {name!r}")
+        # the lease that answers v's own view says how the display is now; it
+        # ends nothing, and owes v no black frame (v came after any cut)
+        reply = name in self.conns[v].view_lease
+        self.conns[v].view_lease.discard(name)
         if m["holder"] is None:
-            if d.holder is not None:
+            if d.holder is not None and reply:
+                if self.lease_state(d, t) == "live":
+                    self.find(t, v, f"view of {d.name} says it is free; {d.hname} holds it")
+                self.end(d, t, "expired unseen")
+            elif d.holder is not None:
                 if t < self.deadline(d) - SLACK:
                     self.find(t, v, f"{d.name} expired {self.deadline(d) - t:.2f} s early")
                 self.end(d, t, "expired")
-            if d.expiring and v in d.viewers:
-                d.black_due.add(v)
+            if d.expiring and v in d.viewers and not reply:
+                d.black_due.add(v)       # present at the cut: its black frame is due
         elif m["holder"] != d.hname:
             self.find(t, v, f"lease names {m['holder']!r}, holder is {d.hname!r}")
 
