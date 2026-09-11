@@ -1,0 +1,8 @@
+{:linters {:unused-namespace    {:level :warning}
+           :unused-referred-var {:level :warning}
+           :unused-binding      {:level :warning}
+           :redundant-do        {:level :warning}
+           :missing-docstring   {:level :off}}
+ :lint-as {clojure.test.check.clojure-test/defspec clojure.test/deftest
+           clojure.test.check.properties/for-all clojure.core/let}
+ :output {:exclude-files ["^resources/" "^node_modules/" "^target/"]}}
