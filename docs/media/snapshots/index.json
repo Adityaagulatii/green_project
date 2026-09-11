@@ -1,0 +1,188 @@
+{
+ "format": "17x9-tetris-snapshots",
+ "command": "python -m tetris_sim --seed 42 --bot",
+ "bot": "Bot(pace=3, think=6, batch_shifts=False)",
+ "digest": "SPEC.md \u00a79.4: sha256 of the 459 row-major R,G,B bytes",
+ "views": {
+  "grid": "DummyDisplay pixels, 50 px per cell",
+  "facade": "illustrative Building 54 facade, provisional row->floor mapping (SPEC \u00a710.4)"
+ },
+ "snapshots": [
+  {
+   "frame": 0,
+   "time_s": 0.0,
+   "event": "countdown-3",
+   "caption": "countdown: 3",
+   "phase": "countdown",
+   "score": 0,
+   "level": 0,
+   "digest": "d2f5d956f45062abb4035fc951731700463382245b2d2a480ab4ad5098b1f9aa",
+   "stem": "f0000-t0.00s-countdown-3"
+  },
+  {
+   "frame": 30,
+   "time_s": 1.0,
+   "event": "countdown-2",
+   "caption": "countdown: 2",
+   "phase": "countdown",
+   "score": 0,
+   "level": 0,
+   "digest": "f134f024aed70d187eea5a7a3bc8b53794a5759f673fc89d16ae6067880786cb",
+   "stem": "f0030-t1.00s-countdown-2"
+  },
+  {
+   "frame": 60,
+   "time_s": 2.0,
+   "event": "countdown-1",
+   "caption": "countdown: 1",
+   "phase": "countdown",
+   "score": 0,
+   "level": 0,
+   "digest": "1903793751fb0ba9cc57c44af912497327b2488037012a4729e99edcd31d3722",
+   "stem": "f0060-t2.00s-countdown-1"
+  },
+  {
+   "frame": 90,
+   "time_s": 3.0,
+   "event": "boot-black",
+   "caption": "boot: the one black frame (SPEC \u00a78.4)",
+   "phase": "countdown",
+   "score": 0,
+   "level": 0,
+   "digest": "e0ee29ce7978a33861e6e63545deda9e734ea784ee8e4ba6fd6aa56b775f6ca9",
+   "stem": "f0090-t3.00s-boot-black"
+  },
+  {
+   "frame": 91,
+   "time_s": 3.03,
+   "event": "first-spawn",
+   "caption": "first spawn, frame 91 = first logical play frame",
+   "phase": "playing",
+   "score": 0,
+   "level": 0,
+   "digest": "1a26ee7e4b911824fd9709a1fd0186104084747b218fc3de1b3ac855eb782207",
+   "stem": "f0091-t3.03s-first-spawn"
+  },
+  {
+   "frame": 158,
+   "time_s": 5.27,
+   "event": "line-clear-flash",
+   "caption": "line-clear flash (1st of 5 white frames)",
+   "phase": "clearing",
+   "score": 100,
+   "level": 0,
+   "digest": "55ac849e7e0935930049a76941834813849ddd731c78ae4f69e51ac163dfa783",
+   "stem": "f0158-t5.27s-line-clear-flash"
+  },
+  {
+   "frame": 163,
+   "time_s": 5.43,
+   "event": "after-clear",
+   "caption": "the frame after the clear",
+   "phase": "playing",
+   "score": 100,
+   "level": 0,
+   "digest": "58d5dd3bff2b6eac7f49ba8c0b8bef38c6f1e43f20078a09531745857de6c424",
+   "stem": "f0163-t5.43s-after-clear"
+  },
+  {
+   "frame": 354,
+   "time_s": 11.8,
+   "event": "level-up",
+   "caption": "level up 0->1 (lines target reached)",
+   "phase": "playing",
+   "score": 500,
+   "level": 1,
+   "digest": "f399016bff5fe4b9d1a3bfee30a83dbf2f870aba4770b37acf2a7559108830be",
+   "stem": "f0354-t11.80s-level-up"
+  },
+  {
+   "frame": 2700,
+   "time_s": 90.0,
+   "event": "mid-game",
+   "caption": "mid-game board",
+   "phase": "playing",
+   "score": 6400,
+   "level": 7,
+   "digest": "abaa4170405cd1738313e4befc4a1f1507e82581dc4b3ec9ba6dfc0fdc293875",
+   "stem": "f2700-t90.00s-mid-game"
+  },
+  {
+   "frame": 4182,
+   "time_s": 139.4,
+   "event": "top-out",
+   "caption": "last play frame before the top-out",
+   "phase": "playing",
+   "score": 11100,
+   "level": 10,
+   "digest": "cc157fb72a83ca3ee747005400e4e873f435a4203b51118481ca14b0744a80db",
+   "stem": "f4182-t139.40s-top-out"
+  },
+  {
+   "frame": 4183,
+   "time_s": 139.43,
+   "event": "gameover-fill-start",
+   "caption": "game over: fill-up starts (t=0)",
+   "phase": "gameover",
+   "score": 11100,
+   "level": 10,
+   "digest": "0d037c15d00cb68be14c99a3909f1b02132697cb9d144ec59096ad35bc50d791",
+   "stem": "f4183-t139.43s-gameover-fill-start"
+  },
+  {
+   "frame": 4216,
+   "time_s": 140.53,
+   "event": "gameover-fill-end",
+   "caption": "game over: fill-up ends (t=33)",
+   "phase": "gameover",
+   "score": 11100,
+   "level": 10,
+   "digest": "cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8",
+   "stem": "f4216-t140.53s-gameover-fill-end"
+  },
+  {
+   "frame": 4217,
+   "time_s": 140.57,
+   "event": "gameover-wait",
+   "caption": "game over: all white, 150 frames (t=34)",
+   "phase": "gameover",
+   "score": 11100,
+   "level": 10,
+   "digest": "cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8",
+   "stem": "f4217-t140.57s-gameover-wait"
+  },
+  {
+   "frame": 4367,
+   "time_s": 145.57,
+   "event": "fall-down-start",
+   "caption": "fall-down starts, rows darken from the top (t=184)",
+   "phase": "gameover",
+   "score": 11100,
+   "level": 10,
+   "digest": "429f9a251a887e5d2e47596cc72fcec70f85917ffe114e8fae77e2df81f6e4ae",
+   "stem": "f4367-t145.57s-fall-down-start"
+  },
+  {
+   "frame": 4400,
+   "time_s": 146.67,
+   "event": "fall-down-end",
+   "caption": "fall-down ends (t=217); countdown next",
+   "phase": "gameover",
+   "score": 11100,
+   "level": 10,
+   "digest": "e0ee29ce7978a33861e6e63545deda9e734ea784ee8e4ba6fd6aa56b775f6ca9",
+   "stem": "f4400-t146.67s-fall-down-end"
+  },
+  {
+   "frame": 4491,
+   "time_s": 149.7,
+   "event": "idle-board",
+   "caption": "idle board: empty well, game 2's first piece",
+   "phase": "playing",
+   "score": 0,
+   "level": 0,
+   "digest": "ad8fb4c5d73d7240dbfaa69508aea1a8b635102fa7578d15d56eb550505f81d6",
+   "stem": "f4491-t149.70s-idle-board"
+  }
+ ]
+}
