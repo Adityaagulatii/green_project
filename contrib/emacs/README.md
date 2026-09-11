@@ -256,6 +256,82 @@ TETRIS_MIT_DISPLAYS_DIR=$D TETRIS_MIT_DISPLAY_FIXTURES=$D/contract/fixtures \
   - a 152-byte frame and a byte of 16 are refused, with the lease kept;
   - after release, a hex session is fanned out as pal16.
 
+## Play on a reserved display
+
+This is the user's scenario for experiment 002, signed display lease keys: "the User interacting with interactive programs like tetris then the event loop interacting with Display". The reservation system issues a **dlk1 lease key**: one principal, one display, one time window, and the formats allowed. The format is defined in `/scratch/work/tetris-parallel/inputs/dlk1-display-lease-key.md`. A relay started with lease secrets checks the key offline and never calls the reservation system. Emacs's part, in `tetris-mit-reserved.el` and `tetris-mit-display-source.el`, has four pieces:
+- **The key goes in `reserve`.** It comes from the `:key` argument, `tetris-mit-display-source-key`, or `tetris-mit-display-source-key-file`. The key is a bearer credential for its window, so keep it out of version control.
+- **The client honours the key.** It decodes the claims but does not verify them, because only the relay holds the secret. It then:
+  - reserves the key's display;
+  - reserves a format the key allows (`fmt`), switching to one if needed;
+  - refuses a key whose slot has already ended;
+  - stops at the key's `exp`.
+
+  It also honours the display's capabilities from `granted`: the grid, the 16-entry palette (quantizing to it), the format, and the fps. The fps is kept with a 10 % margin (`tetris-mit-display-source-pace-margin`), so the relay's rate limit never drops a frame.
+- **A refused key stops the source.** On `{"op":"error","reason":"unauthorized","detail":CODE}`, the source stops and the echo area shows `Display D refused the lease key: CODE (not retrying)`. CODE is `missing`, `malformed`, `unknown-kid`, `bad-signature`, `bad-claims`, `wrong-display`, `not-yet`, `expired` or `format-not-allowed`.
+- **The slot ends at `exp`.** The source stops sending and says `Display D: the reserved slot ended at HH:MM:SS; frames stopped`. A `not-holder` or a `lease` with holder null that follows is taken as that end, not as a lost lease.
+
+**Transport.** websocket.el is used when it is installed. Otherwise the transport is [`display-relay-bridge.py`](display-relay-bridge.py), a small bridge written in Python with `websockets`, run with `tetris-mit-python`. The default `tetris-mit-display-source-transport` is `auto`, so this works in the jail, where websocket.el is absent.
+
+**Manual steps.**
+1. Start a relay. A relay with lease secrets verifies keys; the displays kit's mock without them carries the key unchecked.
+
+   ```sh
+   (cd contrib/displays && python -m demo relay --port 8765)
+   ```
+2. Start the engine server:
+
+   ```sh
+   PYTHONPATH=impl/python/engine:impl/python/sim python -m tetris_sim.server --mode engine --port 1709
+   ```
+3. In Emacs, point to the key, then play:
+
+   ```elisp
+   (setq tetris-mit-display-source-key-file "~/keys/green-building.dlk1")
+   M-x tetris-mit-play-reserved RET
+   ```
+
+   It asks for the engine host and port, the display (green-building), the relay URL, and the key (empty means the option or the file). Then it:
+   - connects the overlay display as a viewer of the server;
+   - starts `tetris-mit-display-source-game` with the key;
+   - opens `M-x tetris-mit-remote`, where you play with the arrows, SPC, z/x/c and TAB.
+
+   Whatever the overlay display shows goes to the reserved display. `M-x tetris-mit-display-source-stop` releases the lease. You can also do the three steps by hand: `C-u M-x tetris-mit-display`, then `M-x tetris-mit-display-source-game`, then `M-x tetris-mit-remote`.
+
+**Unattended, for the reservation harness** (its S2 scenario, the Emacs variant). A scripted user plays one KAV on a lockstep server at 30 frames per second, as the controller: it sends the KAV's key presses and releases, and one tick per frame.
+
+```sh
+TETRIS_MIT_PYTHON=/path/to/python \
+emacs --batch -Q -L contrib/emacs -l tetris-mit-reserved -f tetris-mit-play-reserved-batch \
+      --relay ws://127.0.0.1:PORT/tools/display/ws --key-file KEY.dlk1 \
+      [--trace spec/conformance/traces/07-hard-drop.json] [--relay-display green-building] \
+      [--host 127.0.0.1 --port ENGINE_PORT]
+```
+
+- **The display option is `--relay-display`.** Emacs takes `--display` for itself (the X display) from any position, moves it to the front, and then fails on `-Q` with exit 255.
+- Without `--port`, the command starts a private lockstep engine server.
+- The scripted user plays until the trace ends or the lease does, for instance when the key's slot ends. The KAV's digests are checked on the Emacs display over the frames played.
+- A relay viewer, attached through the bridge with no key needed, records what the display receives, up to the relay's cut: the first `lease` with holder null after ours. Each of those frames must be one the Emacs display showed, in order. At `exp` the relay then sends a black frame that Emacs never showed, so it is counted separately (`relay_frames_after_end`).
+- It prints a report, then `RESULT {json}`, and exits with one of these codes:
+
+| Exit | Meaning |
+|---|---|
+| 0 | PASS |
+| 1 | FAIL |
+| 2 | usage or setup error |
+| 3 | `unauthorized`: the report shows the detail |
+| 4 | the key's slot ended during the game. This takes precedence over the frame check (the steward's ruling). |
+
+Against the mock relay (no lease secrets), KAV-07 gives:
+
+```
+play-reserved: KAV-07: 121/121 digests match on the Emacs display, over 121 of 121 frames played
+play-reserved: source sent … frames (… dropped, … refused); relay viewer saw … in the slot, each one a displayed frame, in order; 0 after its end
+PASS
+```
+
+- **"dropped"** counts frames that the source's own pacing replaced: the latest wins.
+- **"refused"** counts frames the relay dropped with `rate`. The source sends at most once every 1.1/fps seconds, but under host load the pipe to the bridge can deliver two frames together, and the relay then drops the early one. Every frame sent is either shown or refused. The ERT test allows up to 10 % refusals, and the verdict does not depend on them.
+
 ## Driving the real building on Sep 29
 
 The facade is just another SPEC §2.3 `Display`. Either server can drive one, with `--display module:attr`. This takes any object with `send(frame)` and `makeframe()`, such as a subclass of `impl/python/legacy/utilities/display.py`'s `Display`, and a legacy one is handed a legacy `Frame` of `Color`. Point it at whatever the hack exposes:

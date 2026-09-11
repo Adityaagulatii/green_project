@@ -739,14 +739,15 @@ sends keys as SPEC actions.
      (tetris-mit--remote-redraw))))
 
 ;;;###autoload
-(defun tetris-mit-remote (&optional host port)
+(defun tetris-mit-remote (&optional host port seed)
   "Play SPEC v1 17x9 Tetris on the engine server at HOST:PORT.
 This mode is SPEC-faithful: the server runs the SPEC engine
 \(python -m tetris_sim.server --mode engine), and Emacs only sends
 key taps as SPEC actions and draws the frames it gets back.  Every
 cell is colored with a face background, and the status line shows
 score, level and lines.  With a prefix argument, ask for HOST and
-PORT.  Otherwise use `tetris-mit-host' and `tetris-mit-port'.
+PORT.  Otherwise use `tetris-mit-host' and `tetris-mit-port'.  SEED,
+if non-nil, is the session's seed (the hello's `seed').
 
 \\<tetris-mit-remote-mode-map>Keys: \\[tetris-mit-remote-left] / \\[tetris-mit-remote-right] move, \\[tetris-mit-remote-soft-drop] soft drop, \\[tetris-mit-remote-hard-drop] hard drop,
 \\[tetris-mit-remote-rotate-cw] rotate clockwise, \\[tetris-mit-remote-rotate-ccw] counter-clockwise, \\[tetris-mit-remote-rotate-180] 180, \\[tetris-mit-remote-hold] hold,
@@ -772,7 +773,8 @@ PORT.  Otherwise use `tetris-mit-host' and `tetris-mit-port'.
                                  (when (buffer-live-p buffer)
                                    (with-current-buffer buffer
                                      (when (eq proc tetris-mit--process)
-                                       (tetris-mit--remote-receive msg))))))))
+                                       (tetris-mit--remote-receive msg)))))
+                               (and seed `((seed . ,seed))))))
       (setq tetris-mit--note "connecting")
       (tetris-mit--remote-redraw))
     (pop-to-buffer-same-window buffer)

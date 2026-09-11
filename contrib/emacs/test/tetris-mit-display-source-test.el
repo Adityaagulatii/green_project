@@ -642,8 +642,7 @@ that the relay fans out as pal16."
           (setq bridge (make-process
                         :name "relay-bridge" :noquery t :connection-type 'pipe
                         :coding 'binary :filter #'tetris-mit-dsrc-test--bridge-filter
-                        :command (list python (expand-file-name "display-relay-bridge.py"
-                                                                tetris-mit-dsrc-test--dir)
+                        :command (list python tetris-mit-display-source-bridge-script
                                        url "green-building")))
           (should (tetris-mit--wait-until
                    (lambda () (tetris-mit-dsrc-test--viewer-texts "caps")) 20))
