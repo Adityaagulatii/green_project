@@ -141,10 +141,37 @@ def main(argv=None):
 
     sub.add_parser("list", help="display presets and demos")
 
+    sp = sub.add_parser("sim", help="simulate a display (or all 12): ANSI, PNG, GIF; "
+                                    "locally, or as a viewer of a relay (--url)")
+    sp.add_argument("demo", nargs="?", default="tetris", choices=sorted(DEMOS))
+    sp.add_argument("--display", "-d", default=DEFAULT_DISPLAY,
+                    help=f"a preset, or all (default {DEFAULT_DISPLAY})")
+    sp.add_argument("--frames", type=int, default=90, help="frames to play (default 90)")
+    sp.add_argument("--seed", type=int, default=0)
+    sp.add_argument("--png", type=pathlib.Path, metavar="DIR",
+                    help="write the last frame as DIR/<display>.png (<display>-<demo>.png "
+                         "with --gif)")
+    sp.add_argument("--gif", type=pathlib.Path, metavar="DIR",
+                    help="write every frame as DIR/<display>-<demo>.gif")
+    sp.add_argument("--cell", type=int, help="cell height in pixels for PNG and GIF "
+                                             "(default: the image fits 256 x 256)")
+    sp.add_argument("--no-ansi", action="store_true", help="no terminal drawing")
+    sp.add_argument("--fast", action="store_true", help="do not pace the terminal at fps")
+    sp.add_argument("--url", help="view this relay's display instead of playing a demo: "
+                                  "a remote sink (loopback only)")
+    sp.add_argument("--window", action="store_true",
+                    help="also draw in a pygame window, if pygame and a display exist")
+
     args = p.parse_args(argv)
     if args.cmd == "list":
         _list()
         return 0
+    if args.cmd == "sim":
+        from . import sim
+        try:
+            return sim.cli(args)
+        except KeyboardInterrupt:
+            return 130
     runner = {"run": _run, "relay": _relay, "source": _source, "view": _view}[args.cmd]
     try:
         return asyncio.run(runner(args)) or 0

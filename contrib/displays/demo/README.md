@@ -66,6 +66,56 @@ The default display in this repo is **green-building** (9×17, aspect 1.5, gap 0
 
 With `--page`, the relay serves an HTML sink at `/tools/display/`. `?view=NAME` on the WebSocket URL subscribes on connect. The user's canvas page (inputs/display.html) predates v0.2.1 and expects RGB frames.
 
+## Simulator: every preset, as it looks
+
+`python -m demo sim` simulates a display: a demo plays on any of the 12 presets, or a relay's display is viewed as a remote sink. Frames go through the contract's `reduce_event`, the sink's fold: caps, lease, then each frame. Each cell is drawn with its preset's grid, cell aspect (width over height) and gap. The gap is drawn as dark masonry `#1C1C1C`, which is distinct from index 0 (black, unlit). Colours come from the palette through the spec's level rule, so gb shows 4 levels, mono 2 (the Blinkenlights lamps are on or off) and grey8 8 (arcade).
+
+```sh
+$PY -m demo sim                                        # tetris on green-building, ANSI, 90 frames
+$PY -m demo sim -d all fishbowl --frames 60            # every preset in turn
+$PY -m demo sim -d all bars --frames 1 --png media/gallery --no-ansi     # the gallery below
+$PY -m demo sim -d green-building tetris --frames 60 --cell 8 --gif media --no-ansi
+$PY -m demo sim -d dc32 --url ws://127.0.0.1:8765/tools/display/ws        # a remote sink of a running relay
+```
+
+Four renderers share one rasterizer (`render.py`):
+- **ANSI:** truecolor half blocks. A pixel is one column and half a line, so cells keep their aspect, and gaps show once a cell is a few pixels.
+- **PNG:** the last frame. Images fit 256×256 unless `--cell` sets the cell height.
+- **GIF:** every frame, animated at the display's fps.
+- **pygame window (`--window`):** only when pygame and a display exist.
+
+**No pygame here.** The jail's venv has neither pygame nor Pillow (tkinter is missing too), there is no X, and nothing is installed from the network. So PNG and GIF are written with the standard library: `zlib` for PNG, re-telling docs/media/render_snapshots.py, and an LZW encoder for GIF, which `test_sim.py` checks with its own decoder. The `--window` path is untested here; with no pygame or no display, it says so and draws the rest.
+
+`bars` (static; column x shows index x·16/w) shows how each palette's levels fold the 16 indices:
+
+| preset | grid | aspect | gap | palette (levels) | kind | bars |
+|---|---|---|---|---|---|---|
+| cga40 (spec default) | 40×25 | 1.2 | 0 | cga (16) | text-mode | ![cga40](media/gallery/cga40.png) |
+| tetris | 10×20 | 1 | 0.12 | cga (16) | field | ![tetris](media/gallery/tetris.png) |
+| green-building (default here) | 9×17 | 1.5 | 0.35 | cga (16) | facade | ![green-building](media/gallery/green-building.png) |
+| dc32 | 10×18 | 1 | 0 | gb (4) | badge | ![dc32](media/gallery/dc32.png) |
+| gameboy | 10×18 | 1 | 0 | gb (4) | field | ![gameboy](media/gallery/gameboy.png) |
+| trs80 | 10×12 | 1 | 0.12 | mono (2) | text-mode | ![trs80](media/gallery/trs80.png) |
+| c64 | 10×20 | 1 | 0.12 | c64 (16) | field | ![c64](media/gallery/c64.png) |
+| ws2812 | 16×16 | 1 | 0.3 | cga (16) | panel | ![ws2812](media/gallery/ws2812.png) |
+| hub75 (60 fps) | 64×32 | 1 | 0.15 | cga (16) | panel | ![hub75](media/gallery/hub75.png) |
+| blinkenlights | 18×8 | 1.6 | 0.3 | mono (2) | facade | ![blinkenlights](media/gallery/blinkenlights.png) |
+| arcade | 20×26 | 1.3 | 0.3 | grey8 (8) | facade | ![arcade](media/gallery/arcade.png) |
+| remote | 9×17 | 1.5 | 0.35 | cga (16) | facade | ![remote](media/gallery/remote.png) |
+
+The self-playing tetris on the Green Building's 9×17 facade (60 frames): ![green-building tetris](media/green-building-tetris.gif)
+
+`test_sim.py` (36 tests) checks:
+- the geometry, from aspect and gap;
+- that masonry fills exactly the gap;
+- that every preset draws only its palette's levels;
+- a PNG round trip, and an LZW round trip through an independent decoder (including the 4096-code reset);
+- that a GIF holds every frame;
+- the ANSI shape;
+- `sim -d all` on all 12 presets;
+- that the remote sink's picture equals the local one;
+- that every gallery PNG is reproducible pixel for pixel.
+
 ## What the tests check
 
 `test_demo.py` has 45 tests, covering the mock's own behaviour:
