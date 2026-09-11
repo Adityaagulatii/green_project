@@ -41,6 +41,18 @@ Each implementation provides a **driver** command:
   hy       env PYTHONPATH=impl/hy python3 -m hy -m tetris_hy.conformance
   ```
 
+## Known-answer vectors (SPEC Appendix A)
+
+Each trace is the known-answer vector `KAV-NN` of SPEC Appendix A.2, where `NN` is its file number; the ID never changes. The appendix tables summarise the traces and are generated from them, never written by hand:
+
+```
+python3 spec/conformance/gen_appendix.py --check   # the gate runs this
+python3 spec/conformance/gen_appendix.py --write   # after a revision regenerates the traces
+python3 spec/conformance/gen_appendix.py --print
+```
+
+The gate's self-test proves that `--check` rejects a SPEC.md whose appendix has a hand-edited digest.
+
 ## Trace-set hash
 
 `sha256(traces)` in `SEALS.md` is `run.py`'s `trace_set_digest`: SHA-256 over the trace files sorted by file name. Each file contributes its base name, a NUL byte, its raw bytes, and another NUL byte. `run.py` prints it on PASS.
