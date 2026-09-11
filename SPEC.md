@@ -24,7 +24,7 @@ A **simulator** is the host around an engine or another Animation: the display s
 ## 2. Display contract
 
 - **2.1 Frame.** A `Frame` is a grid of **17 rows × 9 columns** of `Color`, 153 cells: one per lit window of the facade.
-- **2.2 Color.** A `Color` is an `(r, g, b)` triple. Each channel is an integer in `0..255`. A constructor or setter given any other value MUST convert it to an integer and clamp it into `0..255`, as legacy `Color._doset` does: `max(0, min(int(v), 255))`. `Color()` is black `(0, 0, 0)`.
+- **2.2 Color.** A `Color` is an `(r, g, b)` triple. Each channel is an integer in `0..255`. A constructor or setter given any other value MUST convert it to an integer by truncating toward zero, as Python's `int(v)` does (so `254.9` becomes 254, not 255), and then clamp it into `0..255`, as legacy `Color._doset` does: `max(0, min(int(v), 255))`. `Color()` is black `(0, 0, 0)`. *(Clarification, v3: truncation. It matters only for non-engine frame producers, §10.3, and not for the traces.)*
 - **2.3 Display.** A `Display` has two operations:
   - `makeframe()` returns a new all-black 17×9 Frame.
   - `send(frame)` shows the frame from the next frame start.
@@ -115,6 +115,8 @@ Input is a sequence of **events** `(action, down)`: `down = true` is a press and
 `left`, `right`, `soft_drop`, `hard_drop`, `rotate_cw`, `rotate_ccw`, `rotate_180`, `hold`
 
 A front end MAY synthesize auto-repeat by repeating `down` events (§14). The engine itself never auto-repeats.
+
+*Clarification (v3).* An event whose action is not one of these eight, or whose `down` is not a boolean, is an error. An engine MAY reject it. Conforming traces never contain one, and the runner's schema gate rejects a trace that does (§12).
 
 ### 5.2 Shifts and soft drop
 
@@ -236,7 +238,7 @@ The line counter `lines` is the number of lines cleared *on the current level*.
   - `acc := acc + inc(level)`, where `inc(L) = (1.0 / DEN[min(L,29)]) × 2.0`, computed in binary64. This is legacy `self._gravity * 2`: the legacy ran "at half FPS", hence the × 2.
   - At the gravity stage: `if acc ≥ 1.0: acc := 0.0`, then **move down** (§6.1).
 
-  Implementations MUST use binary64 arithmetic here, not exact rationals: for example, Guile MUST use inexact reals. **QUIRK-8.** The accumulator resets to 0 instead of subtracting 1, it moves at most one row per frame, and binary64 rounding makes some cadences one frame slower than the rational value. From `acc = 0` at a constant level, the frames between drops `N(L)` are:
+  Implementations MUST use binary64 arithmetic here, not exact rationals: for example, Guile MUST use inexact reals, and Clojure MUST use doubles (`(/ 1.0 den)`), not ratios. **QUIRK-8.** The accumulator resets to 0 instead of subtracting 1, it moves at most one row per frame, and binary64 rounding makes some cadences one frame slower than the rational value. From `acc = 0` at a constant level, the frames between drops `N(L)` are:
 
   | DEN | 48 | 43 | 38 | 33 | 28 | 23 | 18 | 13 | 8 | 6 | 5 | 4 | 3 | 2 | 1 |
   |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -284,6 +286,8 @@ Then the game **resets**:
 - the input queue is cleared.
 
 `high_score`, `acc` and the PRNG state carry over. The countdown (§8.4) follows without the black frame, and then the suspended logical frame resumes (§9.2).
+
+*Clarification (v3).* The reset takes effect in the step that ends the sequence, the pseudocode's `t = 218` (§9.2). That state's frame is the first countdown frame (the digit `3`), and its observation (§12) is already the new game's: score, level and lines are 0, hold is empty, and the new first piece is active. In KAV-12 this is frame 317.
 
 ### 8.4 Countdown
 
@@ -336,12 +340,18 @@ frame k = render(S_{k+1})
 
 The boot sequence is therefore frames 0–89 (the countdown) and frame 90 (black). **Frame 91 is the first logical play frame.**
 
+*Clarification (v3).* `render(S_0)` is the all-black frame. No trace observes it, because frame `k` is `render(S_{k+1})`, but a host that draws the state before the first step does. In the terms of §9.2's pseudocode, the countdown timer of `S_0` is −1, so frame 0 is the first frame of the digit `3`.
+
 **Ladder semantics.** The run is described in the terms of the state-machine ladder (`aygp-dr/state-machine-ladder`, `spec.org` sealed at tag `spec-v2.4.0`, sha256 `88654eb635fd4d04785aef999046c7182297d091188be9013e5c67e2c9ee51fc`), which is cited here, not restated:
 - the **event trace** `E_0, E_1, …`, per frame and sorted by frame, is the source of truth;
 - `step` folded over it from `init(seed)` is the **derivation**. It is a pure function, so the same log always gives the same states and frames;
 - the frames and the §12 observations are the **view**: derived, and never authoritative.
 
-The phase machine is a **CYCLE** (ladder §2.2): countdown → playing → … → gameover → countdown recurs for the lifetime of the engine. Its right projection is the current state, which is the observation's `phase`, together with transition legality. A projection onto independent flags (such as "is playing" and "is clearing") is unsound for a cycle and is not used. The legal edges, from the phase of `S_k` to the phase of `S_{k+1}`, follow from the pseudocode of §9.2, and experiment [006](experiments/006-phase-edges/) checks them against the Python reference:
+The phase machine is a **CYCLE** (ladder §2.2): countdown → playing → … → gameover → countdown recurs for the lifetime of the engine. Its right projection is the current state, which is the observation's `phase`, together with transition legality. A projection onto independent flags (such as "is playing" and "is clearing") is unsound for a cycle and is not used: a phase is re-entered, so a set of flags loses multiplicity and admits sequences that are not paths (ladder §2.2(b)).
+
+*Clarification (v3).* T-legality is checked over consecutive steps, from the phase of `S_k` to that of `S_{k+1}`. A step that keeps the phase takes that phase's self-edge, which Table 9.1 lists. A phase name outside the four is a defect for the schema gate, not the state gate (ladder §2.2(d)). The state gate of §12 is what the ladder calls the structure gate (ladder §2.1(d)), checked after the schema gate. This paragraph and §9.1's ladder terms have been checked against a copy of the ladder's `spec.org` whose sha256 matches the one cited above.
+
+The legal edges, from the phase of `S_k` to the phase of `S_{k+1}`, follow from the pseudocode of §9.2, and experiment [006](experiments/006-phase-edges/) checks them against the Python reference:
 
 **Table 9.1. Legal phase edges** (✓ legal, — illegal).
 
@@ -427,6 +437,12 @@ next(x):  x := x XOR ((x << 13) mod 2^32)
           return x                  -- the new state is also the output
 ```
 
+*Clarification (v3).* `>>` is a logical (zero-filling) shift of the unsigned 32-bit value, and every intermediate is an unsigned integer modulo 2^32.
+- On hosts whose bitwise operators are signed 32-bit, such as JavaScript and therefore ClojureScript, use `>>>` and normalise each result with `>>> 0`.
+- The shuffle's `j := x mod (i + 1)` uses the unsigned value.
+
+A direct transcription on such a host goes wrong as soon as bit 31 is set. The high-bit seeds of Appendix A.1 catch it.
+
 A **bag** is a Fisher–Yates shuffle of the canonical order **`I J L O S Z T`**:
 
 ```
@@ -461,6 +477,10 @@ The PRNG state is never reseeded. **LEGACY-NONDET:** the legacy uses unseeded `n
 
   The game engine is one Animation, with `init = init(seed)`, `tick = step` and `render = render`. Embodied behaviours are others: gestures in response to people, mood colors, "world transitions". The line-clear flash, the game over and the countdown are just parts of the game's frame stream. A host that drives a real Display MUST pace `tick` + `send` at 30 FPS.
 - **10.4 Building model (TBD).** The facade has **153 windows**: 17 lit floors × 9 bays of MIT's Green Building (Building 54, 21 stories). The mapping from display row to floor and from display column to bay is **TBD**. It is to be confirmed at the hack on 2026-09-13 and then fixed here in a spec revision. Until then, simulators SHOULD use this **provisional** mapping and label it as such: display row `r` → floor `20 − r` (rows 0–16 → floors 20–4), display column `c` → bay `c + 1`, counted left to right as seen by the viewer.
+- **10.5 Remote protocol (informative).** Playing an engine, or feeding a display, over the network is defined by the contract [`docs/PROTOCOL.md`](docs/PROTOCOL.md), which is versioned separately as `contract-vN` (seals in [`spec/SEALS.md`](spec/SEALS.md)).
+  - The contract never restates the game. A remote session is a fold over the log of §9.1: its seed and the events of each step.
+  - Its conformance transcripts are derived from the traces of §12, so a conforming server reproduces the traces' digests over the wire.
+  - Physical and remote displays speak an external display protocol, which the contract cites (PROTOCOL §5.4). Adapting the 17×9 frame to other display profiles happens outside the engine.
 
 ## 11. Properties
 
@@ -476,7 +496,7 @@ Every implementation's property-based tests MUST cover P1…P20 (P20 from v2 on:
 - **P8 Hard drop lands on the ghost.** A successful hard drop locks the piece exactly on the ghost cells rendered for the previous frame, before any line clear.
 - **P9 Ghost geometry.** In playing frames, the gray cells are exactly the active piece's cells moved down to their drop row, minus the cells the active piece covers.
 - **P10 Shift inverse.** If a `left` press moves the active piece, a following `right` press restores its previous position and rotation, and vice versa.
-- **P11 One gated action per logical frame.** At most one successful rotation or hard drop happens in any logical frame, including its resumption.
+- **P11 One gated action per logical frame.** At most one successful rotation or hard drop happens in any logical frame, including a resumption after a flash. *(Clarification, v3.)* A resumption after a game over runs in a new game (QUIRK-13), whose DCD is set by QUIRK-11 and whose latches are all available, so a gated action may succeed there once more. P11 is a property within a game.
 - **P12 Latches.** A second press of a rotation or of `hard_drop` with no release in between has no effect.
 - **P13 Scoring.** The score changes only when rows clear, and a clear of `n` rows from counter `L` adds Σ_{k=1..n} 100·((L+k) div 10 + 1). Within a game the score is a multiple of 100 and never decreases.
 - **P14 Levels.** Within a game the level never decreases, and it rises by at most 1 per logical frame. `lines ≥ 0` always.
@@ -575,7 +595,7 @@ A conforming implementation MUST reproduce every known-answer vector (KAV) in th
 - **Primitive vectors** (A.1) pin the PRNG, the bag and the digest (P19).
 - **Trace vectors** (A.2) pin whole runs. The conformance trace `spec/conformance/traces/NN-name.json` is the vector `KAV-NN`; its ID is the file's number and never changes. The trace file is the full, machine-readable vector: seed, events, digests and the final observation (§12). Tables A.2a and A.2b summarise it. They are generated from the trace files by `spec/conformance/gen_appendix.py` and never edited by hand, and `bin/verify.sh` fails if they differ from the traces.
 
-*Planned for v3, not part of v2:* vectors defined by seeds alone, with a bag seed and an input seed that drives a spec-defined input generator, so that a vector needs no event list.
+*Planned for a later version, not part of v3:* vectors defined by seeds alone, with a bag seed and an input seed that drives a spec-defined input generator, so that a vector needs no event list.
 
 ### A.1 Primitive vectors
 
@@ -583,10 +603,18 @@ A conforming implementation MUST reproduce every known-answer vector (KAV) in th
   - seed `1`: 270369, 67634689, 2647435461, 307599695, 2398689233
   - seed `42`: 11355432, 2836018348, 476557059, 3648046016, 3759983556
   - seed `0` (state `0x9E3779B9`): 1359758873, 3761132862, 2075758394, 25405621, 3862129951
+  - seed `0xDEADBEEF` (3735928559): 1199382711, 2384302402, 3129746520, 4276113467, 1745748808
+  - seed `0xFFFFFFFF` (4294967295): 253983, 4228382207, 1958451267, 4056713434, 2049502865
+  - seed `0x80000000` (2147483648): 2148024320, 2299036804, 2861646152, 3585606292, 1756881985
 - **Bags.** The first three bags:
   - seed `1`: `SILOZTJ`, `LJOZSTI`, `ZIOJSLT`
   - seed `42`: `JLOIZTS`, `ILJOZST`, `OZITJLS`
   - seed `0`: `ZLOJTIS`, `ZOTSIJL`, `JITOLSZ`
+  - seed `0xDEADBEEF`: `ZTJOISL`, `LSOJIZT`, `SLTJIZO`
+  - seed `0xFFFFFFFF`: `JIOSTZL`, `SITOJZL`, `TZOJISL`
+  - seed `0x80000000`: `ZOTILSJ`, `ZLJSOTI`, `IJLSTOZ`
+
+  *(v3.)* The three high-bit seeds catch a signed-shift transcription (§9.3).
 - **Digests.**
   - all-black frame: `e0ee29ce7978a33861e6e63545deda9e734ea784ee8e4ba6fd6aa56b775f6ca9`
   - all-white frame: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`
@@ -653,7 +681,7 @@ Trace set: 14 vectors, `sha256(traces)` = `981baab4279c5c9f93f42eda23f1eb9f2b088
 | 10 | The post-game-over countdown shows no black frame; boot shows one | 8.4 |
 | 11 | A game over from a hard drop starts the new game with `dcd = 0` | 6.1 |
 | 12 | Input during countdown and game over is discarded; input during a flash is queued | 9.2 |
-| 13 | A suspended logical frame resumes after the animation, even into a new game | 9.2 |
+| 13 | A suspended logical frame resumes after the animation, even into a new game (so P11 holds within a game) | 9.2 |
 | 14 | No lock delay; soft drop into the stack locks immediately; SDF unused | 6.1 |
 | 15 | DCD +2 per frame vs threshold 2: gated actions blocked only for the rest of the frame | 5.4 |
 | 16 | At most one level per logical frame; the level check runs before gravity | 7.1 |
@@ -663,6 +691,18 @@ Trace set: 14 vectors, `sha256(traces)` = `981baab4279c5c9f93f42eda23f1eb9f2b088
 
 ## Changelog
 
+- **v3** (unsealed). The next rebuild to pass the gate seals it, in the order that [`spec/SEALS.md`](spec/SEALS.md) sequences. Clarifications only, with no behaviour change: the trace set, its hash and every digest are unchanged. Every claim below was checked on the Python reference before it was written down.
+  - From the Clojure rebuild:
+    - §9.3: shifts are logical, on the unsigned value (C1);
+    - §7.3: Clojure uses doubles (C2);
+    - §9.1: `render(S_0)` is black (C3);
+    - §8.3: the reset's frame and observation (C4);
+    - §2.2: truncation (C5);
+    - §5.1: unknown actions (C7);
+    - Appendix A.1: three high-bit seeds (C6). These are new primitive vectors that pin behaviour already defined.
+  - From the Guile rebuild: §11 P11 holds within a game, because a resumption after a game over runs in the new game.
+  - From the main session: §9.1's ladder terms were checked against a sha256-verified copy of the cited `spec.org`. Wording added: why flags are unsound, self-edges, and the schema gate versus the ladder's structure gate.
+  - §10.5: the remote protocol, `docs/PROTOCOL.md`, versioned separately as `contract-vN`. Appendix A: seeds-only vectors are no longer planned for v3.
 - **v2** (2026-09-11, Hy). Sealed by the Hy rebuild (`impl/hy`), which passed all 14 v1 traces on its first run and agrees with the Python reference frame by frame (experiment 005: zero divergences). Clarifications only, with no behaviour change: the trace set and its hash are unchanged, and the traces keep `spec_version` 1.
   - §9.2: the frame right after the countdown that follows a game over queues its events; the hand-over from a flash to a pending game over is unobservable. §6.1: the game-over board is the post-clear board. §12: `active` and `hold` read the state in every phase.
   - Appendix A: the known-answer vectors. Each trace is `KAV-NN`; Tables A.2a/A.2b are generated from the traces by `spec/conformance/gen_appendix.py`, and the gate rejects a hand-edited table. §1 and §12 defer to Appendix A. Seeds-only vectors are planned for v3.
