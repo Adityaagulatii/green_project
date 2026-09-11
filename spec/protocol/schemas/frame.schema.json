@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/frame.schema.json",
+  "title": "frame (server to clients; producer to display server)",
+  "description": "PROTOCOL §3. digest, when present, MUST be the SPEC §9.4 digest of rows; a schema cannot say that, so check.py verifies it. An engine server's frames follow the stricter frame-engine.schema.json.",
+  "type": "object",
+  "required": ["type", "frame_no", "rows"],
+  "properties": {
+    "type": {"const": "frame"},
+    "frame_no": {"$ref": "common.schema.json#/$defs/nat"},
+    "rows": {"$ref": "common.schema.json#/$defs/rows"},
+    "digest": {"$ref": "common.schema.json#/$defs/hex64"},
+    "events": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/step_event"}}
+  }
+}

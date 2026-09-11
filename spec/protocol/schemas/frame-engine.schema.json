@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/frame-engine.schema.json",
+  "title": "frame from an engine server",
+  "description": "PROTOCOL §4.1. An engine server always sends digest, and events: E_k, the events it passed to step k, in order (possibly empty). With them every client can re-fold the session log.",
+  "allOf": [{"$ref": "frame.schema.json"}],
+  "required": ["digest", "events"]
+}

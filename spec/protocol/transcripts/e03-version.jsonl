@@ -1,0 +1,4 @@
+{"format":"17x9-tetris-transcript","contract":1,"name":"e03-version","kind":"errors","seed":1,"description":"A v0 hello is refused by a v1 server."}
+[">",{"type":"hello","protocol":"17x9-tetris-remote","version":0,"role":"controller","client":"17x9-conformance","seed":1}]
+["<",{"type":"error","code":"version"}]
+["<close"]

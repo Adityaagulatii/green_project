@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/state-engine.schema.json",
+  "title": "state from an engine server",
+  "description": "PROTOCOL §4.1. The view of S_{k+1} after frame frame_no = k. phase is exactly one of the SPEC's phase names (SPEC §9.1).",
+  "allOf": [{"$ref": "state.schema.json"}],
+  "required": ["high_score", "phase", "frame_no"],
+  "properties": {
+    "phase": {"$ref": "common.schema.json#/$defs/phase"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/event.schema.json",
+  "title": "event (controller to server)",
+  "description": "PROTOCOL §3. One input event (SPEC §5.1): a press (down true) or a release.",
+  "type": "object",
+  "required": ["type", "action", "down"],
+  "properties": {
+    "type": {"const": "event"},
+    "action": {"$ref": "common.schema.json#/$defs/action"},
+    "down": {"type": "boolean"}
+  }
+}

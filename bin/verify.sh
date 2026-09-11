@@ -13,6 +13,15 @@
 #
 #   bin/verify.sh              self-test, then the checks
 #   bin/verify.sh --no-selftest
+#
+# The protocol leg (contract, docs/PROTOCOL.md §10) runs only when SERVERS
+# names servers, so with SERVERS empty the output is the engine gate's:
+#   SERVERS="python" bin/verify.sh
+# It verifies the verifier too (schemas reject bad messages; a corrupted
+# transcript and every mutant server are rejected; a transparent gatekeeper
+# and a WebSocket front pass), then:
+#   6. spec/protocol/transcripts MUST equal what the traces give;
+#   7. every server MUST pass every transcript.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,6 +45,23 @@ driver() {
         python) echo "$PY_DRIVER" ;;
         hy) echo "$HY_DRIVER" ;;
         *) echo "unknown implementation $1" >&2; return 1 ;;
+    esac
+}
+
+# Servers for the protocol leg. Each server() line prints "URL COMMAND";
+# {port} in both is replaced by a free port that check.py chooses. The
+# engine server must be started with the lockstep clock (PROTOCOL §4.2).
+SERVERS=${SERVERS-}
+CHECK="$PY $ROOT/spec/protocol/check.py"
+TRANSCRIPTS="$PY $ROOT/spec/protocol/gen_transcripts.py"
+PROXY="$PY $ROOT/spec/protocol/proxy.py"
+PROTOCOL_MUTANTS="digest-flip repaint phase-alias illegal-edge drop-state stamp-shift no-events"
+server() {
+    case $1 in
+        python) echo "tcp://127.0.0.1:{port} env PYTHONPATH=$ROOT/impl/python/engine:$ROOT/impl/python/sim $PY -m tetris_sim.server --mode engine --clock lockstep --port {port}" ;;
+        # list python before python-ws in SERVERS: protocol_selftest proxies only the first
+        python-ws) echo "ws://127.0.0.1:{port}/tetris-17x9 env PYTHONPATH=$ROOT/impl/python/engine:$ROOT/impl/python/sim $PY -m tetris_sim.server --mode engine --clock lockstep --transport ws --port {port}" ;;
+        *) echo "unknown server $1" >&2; return 1 ;;
     esac
 }
 
@@ -114,6 +140,89 @@ fi
 for impl in $IMPLS; do
     run "$impl" "$(driver "$impl")"
 done
+
+# The protocol leg (opt-in, see the top of this file).
+protocol_selftest() {
+    set -- $SERVERS
+    spec=$(server "$1")
+    url=${spec%% *}; cmd=${spec#* }
+    uurl=$(printf '%s' "$url" | sed 's/{port}/{upstream_port}/g')
+    ucmd=$(printf '%s' "$cmd" | sed 's/{port}/{upstream_port}/g')
+    via() {  # a proxy.py listening on $1, in front of the first server
+        echo "$PROXY $2 --listen $1 --upstream $uurl --upstream-launch '$ucmd'"
+    }
+
+    if $CHECK --selftest >/dev/null 2>&1; then
+        echo "self-test ok: the schemas reject known-bad messages"
+    else
+        fail "self-test: spec/protocol/check.py --selftest"
+    fi
+
+    ptmp=$(mktemp -d "${TMPDIR:-/tmp}/tetris-protocol.XXXXXX")
+    trap 'rm -rf "${tmp:-}" "$ptmp"' EXIT INT TERM
+    cp "$ROOT"/spec/protocol/transcripts/*.jsonl "$ptmp"/
+    "$PY" - "$ptmp/02-move-left-right.jsonl" <<'EOF'
+import json, sys
+p = sys.argv[1]
+lines = open(p).read().splitlines()
+for i, ln in enumerate(lines):
+    x = json.loads(ln)
+    if isinstance(x, list) and x[0] == "<" and "digest" in x[1] and x[1]["frame_no"] >= 100:
+        d = x[1]["digest"]
+        x[1]["digest"] = ("0" if d[0] != "0" else "1") + d[1:]
+        lines[i] = json.dumps(x, separators=(",", ":"))
+        break
+open(p, "w").write("\n".join(lines) + "\n")
+EOF
+    if $CHECK --transcripts "$ptmp" --only 02-move-left-right --server "$url" --launch "$cmd" >/dev/null 2>&1; then
+        fail "self-test: a corrupted transcript was accepted ($1 server)"
+    else
+        echo "self-test ok: corrupted transcript rejected ($1 server)"
+    fi
+
+    for m in $PROTOCOL_MUTANTS; do
+        if $CHECK --only 02-move-left-right,12-game-over-reset --server "tcp://127.0.0.1:{port}" \
+                --launch "$(via "tcp://127.0.0.1:{port}" "--mutate $m")" >/dev/null 2>&1; then
+            fail "self-test: mutant server '$m' was accepted"
+        else
+            echo "self-test ok: mutant server '$m' rejected"
+        fi
+    done
+
+    if $CHECK --server "tcp://127.0.0.1:{port}" --launch "$(via "tcp://127.0.0.1:{port}" "")" >/dev/null 2>&1; then
+        echo "self-test ok: transparent gatekeeper passes ($1 server)"
+    else
+        fail "self-test: a transparent gatekeeper in front of the $1 server was rejected"
+    fi
+    ws="ws://127.0.0.1:{port}/tetris-17x9"
+    if $CHECK --server "$ws" --launch "$(via "$ws" "")" >/dev/null 2>&1; then
+        echo "self-test ok: WebSocket front passes ($1 server)"
+    else
+        fail "self-test: a WebSocket front for the $1 server was rejected"
+    fi
+}
+
+if [ -n "$SERVERS" ]; then
+    [ "${1:-}" = "--no-selftest" ] || protocol_selftest "$@"
+
+    # 6. the transcripts are generated from the traces, never by hand
+    echo "== protocol transcripts"
+    if ! $TRANSCRIPTS --check; then
+        fail "spec/protocol/transcripts differ from the traces (spec/protocol/gen_transcripts.py --write)"
+    fi
+
+    # 7. servers
+    for s in $SERVERS; do
+        echo "== server $s"
+        if ! spec=$(server "$s"); then
+            fail "unknown server '$s'"
+            continue
+        fi
+        if ! $CHECK --server "${spec%% *}" --launch "${spec#* }"; then
+            fail "server '$s' does not conform to the contract"
+        fi
+    done
+fi
 
 if [ "$status" -eq 0 ]; then echo "GATE: PASS"; else echo "GATE: FAIL"; fi
 exit "$status"
