@@ -32,4 +32,4 @@ Each seal of the network contract ([`docs/PROTOCOL.md`](../docs/PROTOCOL.md) plu
 
 | contract | sha256(PROTOCOL.md) | sha256(contract set) | servers | clients | tag | supported cell | gate |
 |---|---|---|---|---|---|---|---|
-| v1 | *pending* | *pending* | *pending*: the Python server must speak v1 (request filed) | *pending*: Hy or Emacs must speak v1 (requests filed) | `contract-v1` | | |
+| v1 | `6ac5ec0fa20144b06432190aefaaefe25ef4c2bc1149db1bda3e18a009b0fe51` | `e45524faf46512ddd3e2bd53e4d1dec957aba7fdd374447b979cb320e3da7c4d` | Python reference (`impl/python-ws` 676088b): `python` over tcp 21/21, `python-ws` over ws 21/21 | Emacs (`feat/emacs-client` 397dde7): `check.py --session --require-kav` 14/14 on a KAV replay of all 14 traces through `proxy.py --record`, reproduced by the steward from `git archive 397dde7` (recording sha256 prefix `9225246d`) | `contract-v1` | FreeBSD 15.1 amd64 jail, Python 3.12.14, websockets 17.1, Emacs 31.1 | `SERVERS="python python-ws" bin/verify.sh` GATE: PASS at fb816c1, 2026-09-11 09:02Z |
