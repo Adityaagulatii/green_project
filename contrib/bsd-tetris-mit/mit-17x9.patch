@@ -1,0 +1,190 @@
+--- a/tetris/scores.c
++++ b/tetris/scores.c
+@@ -112,9 +112,9 @@
+ 	if (home == NULL || *home == '\0')
+ 		err(1, "getenv");
+ 
+-	ret = snprintf(scorepath, sizeof(scorepath), "%s/%s", home, ".tetris.scores");
++	ret = snprintf(scorepath, sizeof(scorepath), "%s/%s", home, ".tetris-17x9.scores");
+ 	if (ret < 0 || ret >= PATH_MAX)
+-		errc(1, ENAMETOOLONG, "%s/%s", home, ".tetris.scores");
++		errc(1, ENAMETOOLONG, "%s/%s", home, ".tetris-17x9.scores");
+ 
+ 	sd = open(scorepath, mint, 0666);
+ 	if (sd < 0) {
+--- a/tetris/screen.c
++++ b/tetris/screen.c
+@@ -48,6 +48,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <term.h>
++#include <termios.h>
+ #include <unistd.h>
+ 
+ #include "screen.h"
+@@ -377,27 +378,28 @@
+ 		curscore = score;
+ 	}
+ 
+-	/* draw preview of next pattern */
++	/* draw preview of next pattern, right of the well (17x9 patch) */
+ 	if (showpreview && (nextshape != lastshape)) {
+ 		static int r=5, c=2;
+-		int tr, tc, t;
++		int tr, tc, t, pc;
+ 
+ 		lastshape = nextshape;
++		pc = CTOD(B_COLS) + 2;	/* screen column of preview cell 1 */
+ 
+ 		/* clean */
+ 		putpad(SEstr);
+-		moveto(r-1, c-1); putstr("          ");
+-		moveto(r,   c-1); putstr("          ");
+-		moveto(r+1, c-1); putstr("          ");
+-		moveto(r+2, c-1); putstr("          ");
++		moveto(r-1, pc); putstr("        ");
++		moveto(r,   pc); putstr("        ");
++		moveto(r+1, pc); putstr("        ");
++		moveto(r+2, pc); putstr("        ");
+ 
+-		moveto(r-3, c-2);
+-		putstr("Next shape:");
++		moveto(r-3, pc);
++		putstr("Next:");
+ 
+ 		/* draw */
+ 		if (SOstr)
+ 			putpad(SOstr);
+-		moveto(r, 2 * c);
++		moveto(r, pc + 2 * (c - 1));
+ 		putstr(SOstr ? "  " : "[]");
+ 		for (i = 0; i < 3; i++) {
+ 			t = c + r * B_COLS;
+@@ -406,7 +408,7 @@
+ 			tr = t / B_COLS;
+ 			tc = t % B_COLS;
+ 
+-			moveto(tr, 2*tc);
++			moveto(tr, pc + 2 * (tc - 1));
+ 			putstr(SOstr ? "  " : "[]");
+ 		}
+ 		putpad(SEstr);
+--- a/tetris/tetris.6
++++ b/tetris/tetris.6
+@@ -47,6 +47,8 @@
+ The
+ .Nm
+ command runs a display-based game.
++This build plays on a 9-column by 17-row well, the layout of the
++153 lit windows of MIT's Green Building (17x9 patch).
+ The object is to fit shapes together to form complete rows,
+ which then vanish.
+ When the shapes fill up to the top, the game ends.
+@@ -145,13 +147,13 @@
+ are marked with asterisks
+ .Dq * .
+ .Sh ENVIRONMENT
+-.Bl -tag -width $HOME/.tetris.scores
++.Bl -tag -width $HOME/.tetris-17x9.scores
+ .It Ev LOGNAME
+ Name displayed in high score file.
+ .El
+ .Sh FILES
+-.Bl -tag -width $HOME/.tetris.scores
+-.It Pa $HOME/.tetris.scores
++.Bl -tag -width $HOME/.tetris-17x9.scores
++.It Pa $HOME/.tetris-17x9.scores
+ High score file.
+ .El
+ .Sh AUTHORS
+--- a/tetris/tetris.c
++++ b/tetris/tetris.c
+@@ -221,7 +221,7 @@
+ 
+ 	scr_set();
+ 
+-	pos = A_FIRST*B_COLS + (B_COLS/2)-1;
++	pos = A_FIRST*B_COLS + (B_COLS-1)/2;
+ 	nextshape = randshape();
+ 	curshape = randshape();
+ 
+@@ -255,7 +255,7 @@
+ 			 */
+ 			curshape = nextshape;
+ 			nextshape = randshape();
+-			pos = A_FIRST*B_COLS + (B_COLS/2)-1;
++			pos = A_FIRST*B_COLS + (B_COLS-1)/2;
+ 			if (!fits_in(curshape, pos))
+ 				break;
+ 			continue;
+--- a/tetris/tetris.h
++++ b/tetris/tetris.h
+@@ -40,18 +40,23 @@
+  */
+ 
+ /*
+- * The display (`board') is composed of 23 rows of 12 columns of characters
+- * (numbered 0..22 and 0..11), stored in a single array for convenience.
+- * Columns 1 to 10 of rows 1 to 20 are the actual playing area, where
+- * shapes appear.  Columns 0 and 11 are always occupied, as are all
+- * columns of rows 21 and 22.  Rows 0 and 22 exist as boundary areas
++ * MIT Green Building layout (17x9 patch): the playing area is 9 columns
++ * by 17 rows, the 153 lit windows of the facade.
++ *
++ * The display (`board') is composed of 20 rows of 11 columns of characters
++ * (numbered 0..19 and 0..10), stored in a single array for convenience.
++ * Columns 1 to 9 of rows 1 to 17 are the actual playing area, where
++ * shapes appear.  Columns 0 and 10 are always occupied, as are all
++ * columns of rows 18 and 19.  Rows 0 and 19 exist as boundary areas
+  * so that regions `outside' the visible area can be examined without
+  * worrying about addressing problems.
++ *
++ * (The original is 23 rows of 12 columns: a 10x20 playing area.)
+  */
+ 
+ 	/* the board */
+-#define	B_COLS	12
+-#define	B_ROWS	23
++#define	B_COLS	11
++#define	B_ROWS	20
+ #define	B_SIZE	(B_ROWS * B_COLS)
+ 
+ typedef unsigned char cell;
+@@ -59,16 +64,16 @@
+ 
+ 	/* the displayed area (rows) */
+ #define	D_FIRST	1
+-#define	D_LAST	22
++#define	D_LAST	19
+ 
+ 	/* the active area (rows) */
+ #define	A_FIRST	1
+-#define	A_LAST	21
++#define	A_LAST	18
+ 
+ /*
+  * Minimum display size.
+  */
+-#define	MINROWS	23
++#define	MINROWS	20
+ #define	MINCOLS	40
+ 
+ extern int Rows, Cols;	/* current screen size */
+@@ -103,14 +108,15 @@
+  * there is only one row above, but two rows below, the display area.)
+  *
+  * The game works by choosing one of these shapes at random and putting
+- * its center at the middle of the first display row (row 1, column 5).
++ * its center at the middle of the first display row (row 1, column
++ * (B_COLS-1)/2: 5 here, the middle of the 9 columns).
+  * The shape is moved steadily downward until it collides with something:
+  * either  another shape, or the bottom of the board.  When the shape can
+  * no longer be moved downwards, it is merged into the current board.
+  * At this time, any completely filled rows are elided, and blots above
+  * these rows move down to make more room.  A new random shape is again
+  * introduced at the top of the board, and the whole process repeats.
+- * The game ends when the new shape will not fit at (1,5).
++ * The game ends when the new shape will not fit at its spawn cell.
+  *
+  * While the shapes are falling, the user can rotate them counterclockwise
+  * 90 degrees (in addition to moving them left or right), provided that the
