@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import pathlib
+import sys
 import time
 
 import pytest
@@ -74,8 +75,10 @@ class Game:
     one viewer's hello, answers it, then streams FRAMES (as if ticked) PERIOD
     apart, with a state message first, and closes."""
 
-    def __init__(self, frames, period):
-        self.frames, self.period = frames, period
+    def __init__(self, frames, period, end="close", pause_at=None, pause=0.0):
+        self.frames, self.period, self.end = frames, period, end
+        self.pause_at, self.pause = pause_at, pause
+        self.released = asyncio.Event()     # set by a test to free a hung stand-in
 
     def hello(self):
         return {"type": "hello", "protocol": "17x9-tetris-remote", "version": 1,
@@ -94,11 +97,27 @@ class Game:
         hello = json.loads(await reader.readline())
         assert hello["role"] == "viewer" and hello["version"] == 1
         writer.write((json.dumps(self.hello()) + "\n").encode())
-        for m in self.messages():
+
+        async def answer():                     # pong every ping, unless hung
+            while line := await reader.readline():
+                m = json.loads(line)
+                if m.get("type") == "ping" and self.end != "hang":
+                    writer.write((json.dumps({"type": "pong", "id": m.get("id")}) + "\n")
+                                 .encode())
+        pongs = asyncio.create_task(answer())
+        for i, m in enumerate(self.messages()):
             writer.write((json.dumps(m) + "\n").encode())
             await writer.drain()
-            await asyncio.sleep(self.period)
-        writer.close()
+            await asyncio.sleep(self.pause if i == self.pause_at else self.period)
+        if self.end == "hang":                  # stops sending, keeps the socket open
+            writer.write((json.dumps({"type": "error", "code": "shutdown",
+                                      "message": "stopping"}) + "\n").encode())
+            await self.released.wait()
+        pongs.cancel()
+        if self.end == "abort":
+            writer.transport.abort()
+        else:
+            writer.close()
 
     async def ws(self, conn):
         assert conn.request.path == "/tetris-17x9"
@@ -197,6 +216,83 @@ def test_the_last_frame_of_a_burst_is_shown():
                 s.close()
     done, frames = asyncio.run(asyncio.wait_for(go(), 40))
     assert len(frames) == done["sent"] and frames[-1] == expected("dc32", 1)
+
+
+@pytest.mark.parametrize("end", ["close", "abort", "hang"])
+def test_the_feed_releases_and_returns_when_the_game_goes_away(end):
+    """The harness's case: the game server stops mid-stream (--frames 10, 4
+    came).  The feed sends release, returns incomplete, and says why."""
+    game = Game(FRAMES, 0.05, end=end)
+
+    async def go():
+        stack = []
+        try:
+            relay = Relay(lease_secrets=SECRETS)
+            async with relay.serve() as url:
+                gurl = await game_url(game, "tcp", stack)
+                async with connect(url) as v:
+                    await v.send(json.dumps({"op": "view", "display": "dc32"}))
+                    t = time.monotonic()
+                    done = await asyncio.wait_for(feed.run(gurl, url, "dc32", key=key("dc32"),
+                                                           frames=10, idle=0.5), 10)
+                    took = time.monotonic() - t
+                    while True:                  # the viewer sees the lease end
+                        m = await asyncio.wait_for(v.recv(), 5)
+                        if isinstance(m, str) and m.startswith("{"):
+                            msg = json.loads(m)
+                            if msg["op"] == "lease" and msg["holder"] is None and took:
+                                break
+                    game.released.set()
+                    return done, took, relay.stats["released"]
+        finally:
+            for s in stack:
+                s.close()
+    done, took, released = asyncio.run(asyncio.wait_for(go(), 30))
+    assert done["op"] == "incomplete" and done["received"] == 4 and released == 1
+    assert took < 5, took
+    want = {"close": ("closed",), "abort": ("closed", "error"), "hang": ("no reply to ping",)}
+    assert done["game_end"].startswith(want[end]), done["game_end"]
+
+
+def test_a_paused_game_keeps_the_feed():
+    game = Game(FRAMES, 0.05, pause_at=2, pause=1.5)    # silent 1.5 s, but answers pings
+
+    async def go():
+        stack = []
+        try:
+            async with Relay(lease_secrets=SECRETS).serve() as url:
+                gurl = await game_url(game, "tcp", stack)
+                return await feed.run(gurl, url, "dc32", key=key("dc32"), idle=0.5)
+        finally:
+            for s in stack:
+                s.close()
+    done = asyncio.run(asyncio.wait_for(go(), 30))
+    assert done["op"] == "done" and done["received"] == 4 and done["game_end"] == "closed"
+    assert done["errors"] == {}
+
+
+def test_the_cli_exits_nonzero_when_the_game_goes_early(tmp_path):
+    keyfile = tmp_path / "key"
+    keyfile.write_text(key("dc32"))
+
+    async def go():
+        stack = []
+        try:
+            async with Relay(lease_secrets=SECRETS).serve() as url:
+                gurl = await game_url(Game(FRAMES, 0.05), "tcp", stack)
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "demo", "feed", "--game", gurl, "--url", url, "-d",
+                    "dc32", "--key-file", str(keyfile), "--frames", "10", "--game-idle", "0.5",
+                    cwd=pathlib.Path(__file__).resolve().parents[1],
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                out, err = await asyncio.wait_for(proc.communicate(), 20)
+                return proc.returncode, out.decode(), err.decode()
+        finally:
+            for s in stack:
+                s.close()
+    code, out, err = asyncio.run(asyncio.wait_for(go(), 40))
+    assert code == 1 and json.loads(out)["op"] == "incomplete"
+    assert "went away (closed) after 4 of 10 frames; the display was released" in err
 
 
 def test_refusals():

@@ -92,6 +92,9 @@ $PY -m demo feed --game tcp://127.0.0.1:1709 -d dc32 --key-file key.txt [--forma
     - **Colour:** by its default lit rule, `:lit :keep`: black goes to 0 and any other colour to the nearest of indices 1..15, so a lit SPEC cell never goes dark.
     - **Pace:** at most fps. When the game is faster, the latest frame wins and nothing is queued.
     - **Format:** the one reserved.
+  - **When the game goes away,** the feed sends `release` and returns. That covers the connection closing, a transport error, and silence: after `--game-idle` seconds (default 5) it sends a contract `ping`, and no reply to that ping means the game is gone.
+    - A paused game that answers the ping keeps the feed, and the display lease is renewed meanwhile.
+    - With `--frames N`, fewer than N frames is `incomplete`: exit code 1, with a message on stderr.
   - **Parity:** `feed.placement`, `feed.axis` and `feed.color_index` mirror `tetris.displays.adapt/placement`, `axis` and `color-index` (branch contrib/displays-cljc, d0cf331). `fixtures/adapt-cljc.json` is that adapter's own output, from running bb once, for 4 SPEC frames on all 12 presets. `test_feed.py` requires the same indices in all 48 cases.
 
 `test_lease_keys.py` covers:

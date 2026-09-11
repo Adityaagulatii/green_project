@@ -86,8 +86,17 @@ async def _source(args):
 async def _feed(args):
     from . import feed
     result = await feed.run(args.game, args.url, args.display, key=_key(args), fmt=args.format,
-                            name=args.name, ttl=args.ttl, frames=args.frames, seq=args.seq)
+                            name=args.name, ttl=args.ttl, frames=args.frames, seq=args.seq,
+                            idle=args.game_idle)
     print(json.dumps(result))
+    if result.get("op") == "incomplete":
+        print(f"feed: the game server went away ({result['game_end']}) after "
+              f"{result['received']} of {args.frames} frames; the display was released",
+              file=sys.stderr)
+    elif result.get("op") == "lost":
+        print(f"feed: the relay ended the display lease ({result['lost']})", file=sys.stderr)
+    elif result.get("op") == "refused":
+        print(f"feed: refused: {result.get('reason') or result.get('reply')}", file=sys.stderr)
     return 0 if result.get("op") == "done" else 1
 
 
@@ -184,6 +193,9 @@ def main(argv=None):
     sp.add_argument("--seq", action="store_true",
                     help="prefix frame_no mod 65536 (PROTOCOL section 5.4)")
     sp.add_argument("--name", default="feed@jail")
+    sp.add_argument("--game-idle", type=float, default=5.0, metavar="SECONDS",
+                    help="after this much game silence, ping it; no reply means it is gone "
+                         "(default 5)")
     keys(sp)
 
     sp = sub.add_parser("view", help="view a display on a running relay")

@@ -24,6 +24,13 @@ client's job"):
 - **format:** the one reserved, which a key must allow (checked here from the
   key's own claims before the relay is asked).
 
+When the game goes away the feed sends `release` and returns.  That is: the
+connection closes; a transport error; or, after IDLE seconds of silence, a
+contract `ping` that gets no reply.  A paused game that answers the ping
+keeps the feed, and the feed renews the display lease meanwhile.  The result
+is op "done" (or "incomplete" if FRAMES were asked for and fewer came, or
+"lost" if the relay ended the lease), with `game_end` saying why.
+
 demo/test_feed.py holds these to the cljc adapter's committed output
 (demo/fixtures/adapt-cljc.json).
 """
@@ -182,7 +189,7 @@ class GameViewer:
 # ------------------------------------------------------------------ the feed
 
 async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed@jail",
-              ttl=60, frames=None, seq=False):
+              ttl=60, frames=None, seq=False, idle=5.0):
     """Feed the game at GAME_URL to DISPLAY on the relay at RELAY_URL until the
     game ends, FRAMES frames have arrived, or the lease is lost.  Returns a
     summary; {"op": "refused", ...} if the relay did not grant the display."""
@@ -201,7 +208,7 @@ async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed
             return {"op": "refused", "reply": g}
         adapter, period = Adapter(g["w"], g["h"], g["palette"]), 1.0 / g["fps"]
         st = {"received": 0, "sent": 0, "invalid": 0, "errors": {}, "lost": None,
-              "pending": None, "finished": False}
+              "pending": None, "finished": False, "game_end": None, "game_error": None}
         wake = asyncio.Event()
 
         async def relay_errors():
@@ -215,10 +222,23 @@ async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed
                             wake.set()
 
         async def pump(game):
+            pings = 0
             try:
                 while frames is None or st["received"] < frames:
-                    m = await game.recv()
+                    try:
+                        m = await asyncio.wait_for(game.recv(), idle)
+                    except TimeoutError:
+                        if pings:                       # the last ping went unanswered
+                            st["game_end"] = f"no reply to ping in {idle:g} s"
+                            break
+                        pings += 1
+                        await game.send({"type": "ping", "id": pings})
+                        await relay.send(json.dumps({"op": "renew"}))   # a paused game
+                        continue
+                    pings = 0
                     if m is None:
+                        err = st["game_error"]
+                        st["game_end"] = "closed" + (f" after error {err}" if err else "")
                         break
                     if m.get("type") == "frame":
                         if valid_rows(m.get("rows")):
@@ -227,6 +247,12 @@ async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed
                             wake.set()
                         else:
                             st["invalid"] += 1
+                    elif m.get("type") == "error":
+                        st["game_error"] = m.get("code")
+                else:
+                    st["game_end"] = "frames"
+            except Exception as e:                      # a transport error: the game is gone
+                st["game_end"] = f"error: {e!r}"
             finally:
                 st["finished"] = True
                 wake.set()
@@ -260,7 +286,9 @@ async def run(game_url, relay_url, display, *, key=None, fmt="pal16", name="feed
             for t in tasks:
                 t.cancel()
             await game.close()
-    return {"op": "done", "display": display, "format": g["format"], "w": g["w"], "h": g["h"],
+    op = ("lost" if st["lost"] else "incomplete" if frames and st["received"] < frames
+          else "done")
+    return {"op": op, "display": display, "format": g["format"], "w": g["w"], "h": g["h"],
             "fps": g["fps"], "received": st["received"], "sent": st["sent"],
             "skipped": st["received"] - st["sent"], "invalid": st["invalid"],
-            "errors": st["errors"], "lost": st["lost"]}
+            "errors": st["errors"], "lost": st["lost"], "game_end": st["game_end"]}
