@@ -104,6 +104,52 @@ The keys are tetris.el's: the arrows, `SPC`, `p` to pause, `n` for a new game an
 python -m tetris_sim.server --mode display --port 1709 --html wall.html   # ANSI with --ansi
 ```
 
+## Emacs as a display: `tetris-mit-display.el`
+
+`tetris-mit-display.el` makes Emacs itself a SPEC §2.3 Display. Its buffer is the facade: **9 cells wide and 17 tall**, with row 0 at the top (SPEC §2.1). Every cell has **one overlay**, built once. A frame repaints only the overlays whose color changed, with face specs cached per color. After warm-up, a frame allocates no conses, strings or vectors, and ERT checks this. The faces are RGB backgrounds: exact in a GUI or on a truecolor terminal. In `emacs -nw` on a 256-color terminal, Emacs maps them to the nearest tty color; for example, `#ffaa00` becomes `color-214`.
+
+```elisp
+(require 'tetris-mit-display)
+M-x tetris-mit-display     ; viewer of tetris-mit-host:port; C-u to pick host/port/role
+```
+
+**Frame sources.** They are pluggable.
+
+| Source | API |
+|---|---|
+| A protocol server, as viewer or controller | `(tetris-mit-display-connect HOST PORT ROLE [SEED])`. As a controller, the `tetris-mit-remote-bindings` keys play in the display buffer. |
+| An in-process provider, such as impl/elisp's local engine | `(tetris-mit-display-set-provider FN)`. FN is called 30 times a second with no arguments. `nil` stops polling. |
+| Pushing frames | `(tetris-mit-display-show ROWS [FRAME-NO STATE])` returns the number of overlays it repainted. |
+
+**The frame format** is the `rows` payload of a protocol `frame` message (PROTOCOL.md §3): a vector of 17 rows, top first, each a vector of 9 `[R G B]` vectors of integers in 0..255. A provider returns one of:
+- `nil`, meaning no new frame;
+- ROWS;
+- an alist shaped like a frame message: `((rows . ROWS) (frame_no . N) (state . ((score . S) (level . L) (lines . N) (phase . "playing"))))`. `frame_no` and `state` are optional.
+
+**Reservable identity.** An outer reservation system can register this display, and route connections through its gatekeeper. That system is a separate project, and none of its logic lives here.
+- `tetris-mit-display-id`, default `"emacs-17x9"`, and `tetris-mit-display-kind`, default `"emacs"`, identify the display. `(tetris-mit-display-identity)` returns the registration alist, and `emacs --batch -l tetris-mit-display.el -f tetris-mit-display-identity-batch` prints it as JSON.
+- `tetris-mit-gatekeeper-endpoint` and `tetris-mit-gatekeeper-token-source` (a string or a function) are the gatekeeper's settings.
+- `tetris-mit-gatekeeper-function` is the hook. It gets a plist `(:endpoint :token :host :port :role :identity)` and returns the `(HOST . PORT)` to connect to, or `nil` for a direct connection. The token is read only when this hook is set.
+
+**Text-only snapshots.** `M-x tetris-mit-display-snapshot` (`S` in the buffer) writes three files:
+- `BASE.ans`: ANSI truecolor background blocks, byte for byte as `tetris_sim.ansi.frame_to_ansi` writes them;
+- `BASE.txt`: SPEC palette codes, with `?` for any other color;
+- `BASE.json`: `{"format":"17x9-tetris-snapshot","spec_version":1,"display_id","display_kind","frame_no","digest","rows":[...],"state"}`. The `digest` is the SPEC §9.4 digest of `rows`.
+
+The docs agent's stdlib renderer makes a PNG from the JSON.
+
+Snapshots are headless and reproducible: the same seed and events always give byte-identical files.
+
+```sh
+emacs --batch -l contrib/emacs/tetris-mit-display.el \
+      -f tetris-mit-display-snapshot-batch SEED EVENTS OUT [--frames N] [--host H --port P]
+# EVENTS: a JSON array of [frame, action, down]; or an object with "events" (and
+# "frames"), so a conformance trace works; or "-" for none.
+# Without --port, it starts a private lockstep engine server ($TETRIS_MIT_PYTHON).
+```
+
+The CLI plays the events on the SPEC engine, shows every frame, and snapshots the last frame (number FRAMES−1). It prints `snapshot OUT.{json,ans,txt}: seed S, frame F, digest D`. ERT checks that D equals the Python engine's digest of the same frame.
+
 ## Driving the real building on Sep 29
 
 The facade is just another SPEC §2.3 `Display`. Either server can drive one, with `--display module:attr`. This takes any object with `send(frame)` and `makeframe()`, such as a subclass of `impl/python/legacy/utilities/display.py`'s `Display`, and a legacy one is handed a legacy `Frame` of `Color`. Point it at whatever the hack exposes:
