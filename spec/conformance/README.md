@@ -20,22 +20,43 @@ Each implementation provides a **driver** command:
 
 - **Arguments and output.** The driver reads each trace given on the command line. For each one, in argument order, it prints one JSON object on its own line (JSON Lines):
   ```
-  {"name": "<trace name>", "digests": ["<hex>", ...], "final": {...}}
+  {"name": "<trace name>", "digests": ["<hex>", ...], "phases": ["countdown", ...], "final": {...}}
   ```
-- **What it computes.** `digests` and `final` are computed exactly as SPEC §12 describes, from the trace's `seed`, `frames`, `digest_every` and `events` only. The driver MUST NOT read the trace's own `digests` or `final`.
+- **What it computes.** `digests` and `final` are computed exactly as SPEC §12 describes, from the trace's `seed`, `frames`, `digest_every` and `events` only. `phases` is the observation's `phase` for every frame `0 … frames − 1`, for the T-legality check (SPEC P20). The driver MUST NOT read the trace's own `digests` or `final`.
 - **Exit status.** The driver exits 0. A crash counts as a failure.
 
 ## Runner and gate
 
-- **Runner.** `spec/conformance/run.py` is language-neutral and uses only the Python standard library. It first validates every trace's structure, then runs the driver once over all traces and compares the results. It prints `PASS` with the trace-set hash, or `FAIL` followed by one `FINDING` line per mismatch:
+- **Runner.** `spec/conformance/run.py` is language-neutral and uses only the Python standard library. It runs the driver once over all traces, and checks in the order of the state-machine ladder (SPEC §9.1):
+  1. the **schema gate**: the fields and domains of every trace, then of every driver result;
+  2. the **state gate**: T-legality of the reported phases (SPEC P20, Table 9.1);
+  3. the **oracle**: the digests and the final observation equal the trace's.
+
+  It prints `PASS` with the trace-set hash, or `FAIL` followed by one `FINDING` line per mismatch:
   ```
   python3 spec/conformance/run.py --impl "env PYTHONPATH=impl/python/engine python3 -m tetris_engine.conformance" --verbose
   ```
 - **Gate.** `bin/verify.sh` is the single gate. It verifies the verifier first, then runs every implementation's driver. The gate PASSes only with zero findings:
-  - a corrupted trace must be rejected;
+  - a corrupted trace must be rejected, through every driver, so that no driver can pass by echoing the traces' own answers;
   - deliberately wrong engines (mutants) must be rejected;
-  - the reference must pass.
-- **Adding an implementation.** Add a `run <name> "<driver>"` line to `bin/verify.sh`.
+  - every implementation must pass.
+- **Adding an implementation.** Add its name to `IMPLS` in `bin/verify.sh`, and a line for it to `driver()`. The drivers so far:
+  ```
+  python   env PYTHONPATH=impl/python/engine python3 -m tetris_engine.conformance
+  hy       env PYTHONPATH=impl/hy python3 -m hy -m tetris_hy.conformance
+  ```
+
+## Known-answer vectors (SPEC Appendix A)
+
+Each trace is the known-answer vector `KAV-NN` of SPEC Appendix A.2, where `NN` is its file number; the ID never changes. The appendix tables summarise the traces and are generated from them, never written by hand:
+
+```
+python3 spec/conformance/gen_appendix.py --check   # the gate runs this
+python3 spec/conformance/gen_appendix.py --write   # after a revision regenerates the traces
+python3 spec/conformance/gen_appendix.py --print
+```
+
+The gate's self-test proves that `--check` rejects a SPEC.md whose appendix has a hand-edited digest.
 
 ## Trace-set hash
 
