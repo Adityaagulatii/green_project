@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/lease.json",
+  "title": "lease",
+  "description": "wal.sh/tools/display v0.2.1, Wire protocol: the lease message.",
+  "type": "object",
+  "required": [
+    "op",
+    "display",
+    "holder",
+    "expires"
+  ],
+  "properties": {
+    "op": {
+      "const": "lease"
+    },
+    "display": {
+      "type": "string",
+      "minLength": 1
+    },
+    "holder": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expires": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true
+}

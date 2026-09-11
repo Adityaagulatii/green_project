@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/reserve.json",
+  "title": "reserve",
+  "description": "wal.sh/tools/display v0.2.1, Wire protocol: the reserve message.",
+  "type": "object",
+  "required": [
+    "op",
+    "name"
+  ],
+  "properties": {
+    "op": {
+      "const": "reserve"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "a label, not an identity (NR-AUTH)"
+    },
+    "display": {
+      "type": "string",
+      "minLength": 1,
+      "description": "optional; the relay's default display when omitted"
+    },
+    "ttl": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "seconds; optional (300 in this kit); the lease is at most 900 s, and a relay clamps a larger ttl to 900 (granted.expires shows the ttl it applied)"
+    },
+    "format": {
+      "enum": [
+        "pal16",
+        "hex",
+        "rgb24"
+      ],
+      "description": "the format the source sends; pal16 when omitted; rgb24 is accepted at the relay only"
+    }
+  },
+  "additionalProperties": true
+}

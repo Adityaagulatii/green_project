@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/error.json",
+  "title": "error",
+  "description": "wal.sh/tools/display v0.2.1, Wire protocol: the error message.",
+  "type": "object",
+  "required": [
+    "op",
+    "reason"
+  ],
+  "properties": {
+    "op": {
+      "const": "error"
+    },
+    "reason": {
+      "enum": [
+        "not-holder",
+        "bad-frame-length",
+        "rate",
+        "bad-format",
+        "unknown-op"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

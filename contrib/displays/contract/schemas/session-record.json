@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/session-record.json",
+  "title": "session-record",
+  "description": "One line of a recorded relay session (JSONL), as check_session.py reads it. Direction is the relay's: in = received by the relay, out = sent by it.",
+  "type": "object",
+  "required": [
+    "t",
+    "conn",
+    "dir",
+    "kind"
+  ],
+  "properties": {
+    "t": {
+      "type": "number",
+      "description": "unix seconds, when the relay received or sent the message"
+    },
+    "conn": {
+      "type": "string",
+      "minLength": 1,
+      "description": "a connection id; udp:HOST:PORT for a UDP sender"
+    },
+    "dir": {
+      "enum": [
+        "in",
+        "out"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "open",
+        "close",
+        "text",
+        "binary",
+        "udp",
+        "meta"
+      ],
+      "description": "meta: the relay's capabilities.json, as payload (optional; a checker uses its displays and default)"
+    },
+    "payload": {
+      "description": "text: the message as sent; binary and udp: the bytes as lower-case hex; open: {path}; close: {code} or null"
+    }
+  },
+  "additionalProperties": true
+}

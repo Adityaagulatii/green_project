@@ -1,0 +1,16 @@
+# Pin of the user's published display contract, wal.sh/tools/display v0.2.1.
+# The oracle for contrib/displays/contract/**; nothing here is edited by hand.
+url         https://wal.sh/tools/display/  (spec: https://wal.sh/tools/display/spec,
+            advertisement: https://wal.sh/tools/display/capabilities.json)
+fetched     2026-09-11T08:22:19Z, HTTPS GET of static files, by session 793903b0 (the coordinator)
+local pin   /scratch/work/tetris-parallel/inputs/wal-sh-display-0.2.1/ (its PROVENANCE lists the same sha256)
+copied      2026-09-11 by the displays-contract workstream (session 019NmJBaPe4BpAQj7SRRXiQV), byte for byte;
+            no connection to wal.sh was made from this repository
+not copied  index.html (5e7476ed6541cf2acb50cdb0bf779c75b08745dabb879d5b0fd6eadd2870ed1b): the live page
+            shell, which loads the site's scripts; the contract is spec.md + capabilities.json
+supersedes  /scratch/work/tetris-parallel/inputs/wal-sh-display-protocol.md (w*h*3 RGB frames,
+            space-separated error reasons), which contrib/displays/demo implemented before v0.2.1
+
+# sha256 (sha256sum), checked by contract/test_display_contract.py::test_pin_matches_provenance
+f2028d88f43cde03bba3c870ce4011c67d8d52762c082770cf5960f08f38ed2b  spec.md
+11fdc2b39380c84bad9702fa9aefe402e8761a1b082467b2ef27487edbb88275  capabilities.json

@@ -1,0 +1,39 @@
+{
+  "spec": "wal.sh/tools/display v0.2.1",
+  "description": "Grid limits (w, h in 1..256, w*h at most 65,536: the page's bad-w, bad-h; the cell cap never binds alone, 65,537 being prime) and the legal frame lengths per grid. The spec's numbers: 153 bytes for green-building, 1,000 for cga40, 2,048 for hub75, 65,538 for pal16 and 65,793 for hex at 256x256.",
+  "cases": [
+    {"w":1,"h":1,"error":null},
+    {"w":256,"h":256,"error":null},
+    {"w":256,"h":1,"error":null},
+    {"w":1,"h":256,"error":null},
+    {"w":0,"h":1,"error":"bad-w"},
+    {"w":1,"h":0,"error":"bad-h"},
+    {"w":257,"h":1,"error":"bad-w"},
+    {"w":1,"h":257,"error":"bad-h"},
+    {"w":256,"h":257,"error":"bad-h"},
+    {"w":65537,"h":1,"error":"bad-w"},
+    {"w":1,"h":65537,"error":"bad-h"},
+    {"w":-1,"h":5,"error":"bad-w"},
+    {"w":1.5,"h":2,"error":"bad-w"},
+    {"w":"9","h":17,"error":"bad-w"},
+    {"w":true,"h":1,"error":"bad-w"}
+  ],
+  "lengths": [
+    {"grid":"cga40","w":40,"h":25,"pal16":[1000,1002],"hex":[1025,1026],"rgb24":[3000,3002]},
+    {"grid":"tetris","w":10,"h":20,"pal16":[200,202],"hex":[220,221],"rgb24":[600,602]},
+    {"grid":"green-building","w":9,"h":17,"pal16":[153,155],"hex":[170,171],"rgb24":[459,461]},
+    {"grid":"dc32","w":10,"h":18,"pal16":[180,182],"hex":[198,199],"rgb24":[540,542]},
+    {"grid":"gameboy","w":10,"h":18,"pal16":[180,182],"hex":[198,199],"rgb24":[540,542]},
+    {"grid":"trs80","w":10,"h":12,"pal16":[120,122],"hex":[132,133],"rgb24":[360,362]},
+    {"grid":"c64","w":10,"h":20,"pal16":[200,202],"hex":[220,221],"rgb24":[600,602]},
+    {"grid":"ws2812","w":16,"h":16,"pal16":[256,258],"hex":[272,273],"rgb24":[768,770]},
+    {"grid":"hub75","w":64,"h":32,"pal16":[2048,2050],"hex":[2080,2081],"rgb24":[6144,6146]},
+    {"grid":"blinkenlights","w":18,"h":8,"pal16":[144,146],"hex":[152,153],"rgb24":[432,434]},
+    {"grid":"arcade","w":20,"h":26,"pal16":[520,522],"hex":[546,547],"rgb24":[1560,1562]},
+    {"grid":"remote","w":9,"h":17,"pal16":[153,155],"hex":[170,171],"rgb24":[459,461]},
+    {"grid":"1x1","w":1,"h":1,"pal16":[1,3],"hex":[2,3],"rgb24":[3,5]},
+    {"grid":"256x1","w":256,"h":1,"pal16":[256,258],"hex":[257,258],"rgb24":[768,770]},
+    {"grid":"1x256","w":1,"h":256,"pal16":[256,258],"hex":[512,513],"rgb24":[768,770]},
+    {"grid":"256x256","w":256,"h":256,"pal16":[65536,65538],"hex":[65792,65793],"rgb24":[196608,196610]}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "spec": "wal.sh/tools/display v0.2.1",
+  "description": "Relay-side: frames with these sequence prefixes (null: none), at a legal pace, one lease. A dropped frame gets error rate. literal is the spec's text (seq >= last accepted); serial is RFC 1982 over 16 bits, which survives the wrap. A frame with no prefix is never dropped by sequence and leaves last alone.",
+  "cases": [
+    {"name":"reordered: lower than the last accepted","rule":"literal","seqs":[5,4,6],"accepted":[true,false,true],"reasons":[null,"rate",null]},
+    {"name":"equal is not lower","rule":"literal","seqs":[5,5],"accepted":[true,true],"reasons":[null,null]},
+    {"name":"from 0","rule":"literal","seqs":[0,1,2],"accepted":[true,true,true],"reasons":[null,null,null]},
+    {"name":"from 65535","rule":"literal","seqs":[65535,65535],"accepted":[true,true],"reasons":[null,null]},
+    {"name":"wrap 65535 -> 0","rule":"literal","seqs":[65534,65535,0,1],"accepted":[true,true,false,false],"reasons":[null,null,"rate","rate"]},
+    {"name":"no prefix after prefixed frames","rule":"literal","seqs":[3,null,2,null,4],"accepted":[true,true,false,true,true],"reasons":[null,null,"rate",null,null]},
+    {"name":"no prefix first","rule":"literal","seqs":[null,9,8],"accepted":[true,true,false],"reasons":[null,null,"rate"]},
+    {"name":"half the space ahead","rule":"literal","seqs":[0,32767,0,32768],"accepted":[true,true,false,true],"reasons":[null,null,"rate",null]},
+    {"name":"reordered: lower than the last accepted","rule":"serial","seqs":[5,4,6],"accepted":[true,false,true],"reasons":[null,"rate",null]},
+    {"name":"equal is not lower","rule":"serial","seqs":[5,5],"accepted":[true,true],"reasons":[null,null]},
+    {"name":"from 0","rule":"serial","seqs":[0,1,2],"accepted":[true,true,true],"reasons":[null,null,null]},
+    {"name":"from 65535","rule":"serial","seqs":[65535,65535],"accepted":[true,true],"reasons":[null,null]},
+    {"name":"wrap 65535 -> 0","rule":"serial","seqs":[65534,65535,0,1],"accepted":[true,true,true,true],"reasons":[null,null,null,null]},
+    {"name":"no prefix after prefixed frames","rule":"serial","seqs":[3,null,2,null,4],"accepted":[true,true,false,true,true],"reasons":[null,null,"rate",null,null]},
+    {"name":"no prefix first","rule":"serial","seqs":[null,9,8],"accepted":[true,true,false],"reasons":[null,null,"rate"]},
+    {"name":"half the space ahead","rule":"serial","seqs":[0,32767,0,32768],"accepted":[true,true,false,true],"reasons":[null,null,"rate",null]}
+  ]
+}

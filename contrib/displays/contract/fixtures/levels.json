@@ -1,0 +1,30 @@
+{
+  "spec": "wal.sh/tools/display v0.2.1",
+  "description": "The level rule: level(idx) = 0 for idx 0, else max(1, round(idx * (n - 1) / 15)); for every palette size 2..16 and every named palette, with palette16 (the 16 colours a relay announces in caps). idx*(n-1)/15 is never a half, so no rounding mode is needed.",
+  "cases": [
+    {"n":2,"levels":[0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"idx0":0,"idx1":1,"idx15":1},
+    {"n":3,"levels":[0,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2],"idx0":0,"idx1":1,"idx15":2},
+    {"n":4,"levels":[0,1,1,1,1,1,1,1,2,2,2,2,2,3,3,3],"idx0":0,"idx1":1,"idx15":3},
+    {"n":5,"levels":[0,1,1,1,1,1,2,2,2,2,3,3,3,3,4,4],"idx0":0,"idx1":1,"idx15":4},
+    {"n":6,"levels":[0,1,1,1,1,2,2,2,3,3,3,4,4,4,5,5],"idx0":0,"idx1":1,"idx15":5},
+    {"n":7,"levels":[0,1,1,1,2,2,2,3,3,4,4,4,5,5,6,6],"idx0":0,"idx1":1,"idx15":6},
+    {"n":8,"levels":[0,1,1,1,2,2,3,3,4,4,5,5,6,6,7,7],"idx0":0,"idx1":1,"idx15":7},
+    {"n":9,"levels":[0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8],"idx0":0,"idx1":1,"idx15":8},
+    {"n":10,"levels":[0,1,1,2,2,3,4,4,5,5,6,7,7,8,8,9],"idx0":0,"idx1":1,"idx15":9},
+    {"n":11,"levels":[0,1,1,2,3,3,4,5,5,6,7,7,8,9,9,10],"idx0":0,"idx1":1,"idx15":10},
+    {"n":12,"levels":[0,1,1,2,3,4,4,5,6,7,7,8,9,10,10,11],"idx0":0,"idx1":1,"idx15":11},
+    {"n":13,"levels":[0,1,2,2,3,4,5,6,6,7,8,9,10,10,11,12],"idx0":0,"idx1":1,"idx15":12},
+    {"n":14,"levels":[0,1,2,3,3,4,5,6,7,8,9,10,10,11,12,13],"idx0":0,"idx1":1,"idx15":13},
+    {"n":15,"levels":[0,1,2,3,4,5,6,7,7,8,9,10,11,12,13,14],"idx0":0,"idx1":1,"idx15":14},
+    {"n":16,"levels":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"idx0":0,"idx1":1,"idx15":15},
+    {"n":0,"error":"level rule needs 2 to 16 entries"},
+    {"n":1,"error":"level rule needs 2 to 16 entries"},
+    {"n":17,"error":"level rule needs 2 to 16 entries"},
+    {"palette":"cga","n":16,"levels":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"palette16":["#000000","#0000AA","#00AA00","#00AAAA","#AA0000","#AA00AA","#AA5500","#AAAAAA","#555555","#5555FF","#55FF55","#55FFFF","#FF5555","#FF55FF","#FFFF55","#FFFFFF"]},
+    {"palette":"c64","n":16,"levels":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"palette16":["#000000","#FFFFFF","#880000","#AAFFEE","#CC44CC","#00CC55","#0000AA","#EEEE77","#DD8855","#664400","#FF7777","#333333","#777777","#AAFF66","#0088FF","#BBBBBB"]},
+    {"palette":"gb","n":4,"levels":[0,1,1,1,1,1,1,1,2,2,2,2,2,3,3,3],"palette16":["#0F380F","#306230","#306230","#306230","#306230","#306230","#306230","#306230","#8BAC0F","#8BAC0F","#8BAC0F","#8BAC0F","#8BAC0F","#9BBC0F","#9BBC0F","#9BBC0F"]},
+    {"palette":"mono","n":2,"levels":[0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"palette16":["#000000","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"]},
+    {"palette":"grey8","n":8,"levels":[0,1,1,1,2,2,3,3,4,4,5,5,6,6,7,7],"palette16":["#000000","#242424","#242424","#242424","#494949","#494949","#6D6D6D","#6D6D6D","#929292","#929292","#B6B6B6","#B6B6B6","#DBDBDB","#DBDBDB","#FFFFFF","#FFFFFF"]},
+    {"palette":"pico8","n":16,"levels":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"palette16":["#000000","#1D2B53","#7E2553","#008751","#AB5236","#5F574F","#C2C3C7","#FFF1E8","#FF004D","#FFA300","#FFEC27","#00E436","#29ADFF","#83769C","#FF77A8","#FFCCAA"]}
+  ]
+}
