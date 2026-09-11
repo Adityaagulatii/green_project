@@ -1,4 +1,4 @@
-"""python -m demo {run,relay,source,view,list} -- see README.md."""
+"""python -m demo {run,relay,source,view,list,sim,feed} -- see README.md."""
 import argparse
 import asyncio
 import json
@@ -7,6 +7,7 @@ import signal
 import sys
 
 from contract import display_contract as dc
+from contract import dlk1
 
 from . import source, view
 from .producers import DEMOS
@@ -40,9 +41,27 @@ def _fanout(items):
     return per or None
 
 
+def _key(args):
+    """The dlk1 key of --key K, or of --key-file F (its first line); None."""
+    if args.key_file:
+        lines = pathlib.Path(args.key_file).read_text(encoding="utf-8").split()
+        return lines[0] if lines else None
+    return args.key
+
+
+def _secrets(path):
+    if path is None:
+        return None
+    try:
+        return dlk1.load_secrets(path)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--lease-secret {path}: {e}") from None
+
+
 async def _relay(args):
     relay = Relay(fps=args.fps, page=args.page, default=args.default, seq_rule=args.seq_rule,
-                  extra=args.extra_display, fanout=_fanout(args.fanout), record=args.record)
+                  extra=args.extra_display, fanout=_fanout(args.fanout), record=args.record,
+                  lease_secrets=_secrets(args.lease_secret))
     async with relay.serve(args.host, args.port, udp_port=args.udp_port) as url:
         http_base = url.replace("ws://", "http://", 1).rsplit("/", 1)[0]
         print(f"mock relay {url}  (capabilities: {http_base}/capabilities.json)", flush=True)
@@ -59,8 +78,25 @@ async def _source(args):
     frames = round(args.seconds * args.fps) if args.seconds else None
     result = await source.run(args.url, args.display, args.demo, frames=frames, name=args.name,
                               seed=args.seed, seq=args.seq, ttl=args.ttl, fps=args.fps,
-                              fmt=args.format)
+                              fmt=args.format, key=_key(args))
     print(json.dumps(result))
+    return 0 if result.get("op") == "done" else 1
+
+
+async def _feed(args):
+    from . import feed
+    result = await feed.run(args.game, args.url, args.display, key=_key(args), fmt=args.format,
+                            name=args.name, ttl=args.ttl, frames=args.frames, seq=args.seq,
+                            idle=args.game_idle)
+    print(json.dumps(result))
+    if result.get("op") == "incomplete":
+        print(f"feed: the game server went away ({result['game_end']}) after "
+              f"{result['received']} of {args.frames} frames; the display was released",
+              file=sys.stderr)
+    elif result.get("op") == "lost":
+        print(f"feed: the relay ended the display lease ({result['lost']})", file=sys.stderr)
+    elif result.get("op") == "refused":
+        print(f"feed: refused: {result.get('reason') or result.get('reply')}", file=sys.stderr)
     return 0 if result.get("op") == "done" else 1
 
 
@@ -129,11 +165,38 @@ def main(argv=None):
                     help="the format to fan out (caps.format): pal16 (default) or hex")
     sp.add_argument("--seq-rule", choices=dc.SEQ_RULES, default="literal",
                     help="how a sequence prefix orders frames (default literal, the spec's text)")
+    sp.add_argument("--lease-secret", type=pathlib.Path, metavar="FILE",
+                    help="dlk1 lease secrets, lines of `kid hex64`: every reserve then needs "
+                         "a signed key (an experiment extension, not v0.2.1)")
+
+    def keys(sp):
+        g = sp.add_mutually_exclusive_group()
+        g.add_argument("--key", help="a dlk1 lease key, sent in the reserve")
+        g.add_argument("--key-file", type=pathlib.Path, help="a file holding the dlk1 key")
 
     sp = sub.add_parser("source", help="send a demo to a running relay")
     common(sp, url=True)
     producer(sp)
     sp.add_argument("--name", default="demo@jail")
+    keys(sp)
+
+    sp = sub.add_parser("feed", help="bridge a game server (a contract-v1 viewer) to a display "
+                                     "(a source), honouring the display's capabilities")
+    sp.add_argument("--game", default="tcp://127.0.0.1:1709",
+                    help="tcp://HOST:PORT or ws://HOST:PORT/tetris-17x9, on loopback")
+    sp.add_argument("--display", "-d", default=DEFAULT_DISPLAY)
+    sp.add_argument("--url", default="ws://127.0.0.1:8765/tools/display/ws",
+                    help="the display relay")
+    sp.add_argument("--format", default="pal16", choices=source.FORMATS)
+    sp.add_argument("--frames", type=int, help="stop after this many game frames")
+    sp.add_argument("--ttl", type=int, default=60)
+    sp.add_argument("--seq", action="store_true",
+                    help="prefix frame_no mod 65536 (PROTOCOL section 5.4)")
+    sp.add_argument("--name", default="feed@jail")
+    sp.add_argument("--game-idle", type=float, default=5.0, metavar="SECONDS",
+                    help="after this much game silence, ping it; no reply means it is gone "
+                         "(default 5)")
+    keys(sp)
 
     sp = sub.add_parser("view", help="view a display on a running relay")
     common(sp, url=True)
@@ -172,7 +235,8 @@ def main(argv=None):
             return sim.cli(args)
         except KeyboardInterrupt:
             return 130
-    runner = {"run": _run, "relay": _relay, "source": _source, "view": _view}[args.cmd]
+    runner = {"run": _run, "relay": _relay, "source": _source, "view": _view,
+              "feed": _feed}[args.cmd]
     try:
         return asyncio.run(runner(args)) or 0
     except KeyboardInterrupt:

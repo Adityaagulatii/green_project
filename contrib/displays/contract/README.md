@@ -135,6 +135,30 @@ Displays and the default come from the relay's own `capabilities.json` when it s
 
 **Timing under load.** The "frames at fps pass" test allows one clean round out of three. With the jail at load average 7, two frames sent 25 ms apart sometimes arrived in one read at the relay, and no relay can tell that from a burst. An isolated run showed no drops: 35 of 35 frames passed, with relay-side gaps from 25.5 to 99 ms.
 
+## Experiment extension: dlk1 lease keys (not part of v0.2.1)
+
+Experiment 002 (the reservation workstream's) has the reservation system and the display share a secret. The proposal is `/scratch/work/tetris-parallel/inputs/dlk1-display-lease-key.md`: the reservation system signs a key for one principal, one display, one slot and a list of formats, and the display checks it offline. This lifts the spec's NR-AUTH, but only for a relay started with lease secrets. **None of it is in wal.sh/tools/display v0.2.1.**
+
+- **`dlk1.py`** parses, signs and verifies keys, in the proposal's order. It returns the detail codes `missing`, `malformed`, `unknown-kid`, `bad-signature`, `bad-claims`, `wrong-display`, `not-yet`, `expired` and `format-not-allowed`, and compares the signature in constant time. `test_dlk1.py` covers it.
+- **The demo relay** runs in this mode with `--lease-secret FILE` (lines of `kid hex64`):
+  - Every `reserve` needs a `key`. A refusal is `{"op":"error","reason":"unauthorized","detail":CODE}`. This reason is an extension: `schemas/error.json` keeps the five v0.2.1 reasons.
+  - The holder is shown as the key's `sub`.
+  - `granted.expires` is min(now + ttl, exp). Neither renewals nor frames extend the lease past `exp`.
+  - At `exp`, the lease ends as a ttl expiry does: `lease` with holder null, a black frame, then `not-holder` for the old holder.
+  - UDP packets are dropped, because they carry no key.
+  - Viewers need no key.
+- **Without the flag, nothing changes,** and `relay_conformance.py` stays at 88/88.
+- **check_session:** `--lease-keys` (`check(records, lease_keys=True)`) accepts `unauthorized`, takes the holder from the key, and ends a lease no later than the key's `exp`. Without that flag, an `unauthorized` error is a finding.
+- **Clients:** `demo source --key K | --key-file F` and `demo feed` (see demo/README.md) send the key in `reserve`.
+- **Readings of the proposal's looser points:**
+  - `iss` must be `"dres"`.
+  - `nbf` must be ≥ 0.
+  - `rid`, `display` and `jti` may be any string.
+  - base64url must be canonical: no padding, and zero trailing bits.
+  - A duplicate JSON key fails as `bad-claims`, through the canonical-bytes check.
+  - An unknown display on the relay is `bad-format`, checked after the key.
+  - The vectors at `inputs/dlk1-vectors.json` are checked by `test_dlk1.py` once published.
+
 ## Implementer choices (CHOICE in the code)
 
 These are the readings this kit and the demo relay take where the spec is silent. Fixture cases tagged `choice`, and conformance tests marked `choice`, pin them.

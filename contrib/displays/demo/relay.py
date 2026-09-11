@@ -18,7 +18,10 @@ Each display has its own lease:
   accepted one), and unknown-op for an op the relay does not know;
 - at most 32 viewers per display;
 - optionally, BLP and MCUF packets over UDP on loopback.  Width x height picks
-  the display, and the sender is a 5-second holder.
+  the display, and the sender is a 5-second holder;
+- with --lease-secret, the dlk1 experiment extension (not v0.2.1, see
+  contract/README.md): every reserve needs a key the reservation system
+  signed, the holder is its sub, and the lease ends at its exp.
 
 The choices this mock makes where the spec is silent are listed in README.md.
 It serves capabilities.json (the pin, with local endpoints) and, with
@@ -38,6 +41,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from contract import display_contract as dc
+from contract import dlk1
 from websockets.asyncio.server import broadcast, serve
 from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
@@ -144,14 +148,17 @@ def parse_extra(text):
 class Relay:
     def __init__(self, fps=None, page=None, *, default=DEFAULT_DISPLAY, rate_tolerance=0.2,
                  seq_rule="literal", max_viewers=MAX_VIEWERS, udp_ttl=UDP_TTL,
-                 extra=(), fanout=None, record=None):
+                 extra=(), fanout=None, record=None, lease_secrets=None, clock=time.time):
         """FPS, if given, lowers every display's rate (never raises it).  EXTRA
         adds mock-only displays (dicts as parse_extra returns, or its strings).
         FANOUT is a format for every display, or {name: format} where "*"
         names every display not listed.  RECORD is a
         path: every message in and out is appended to it as JSONL, the shape
         contract/check_session.py reads.  RATE_TOLERANCE is the jitter
-        allowance of the rate limit, as a fraction of a frame period."""
+        allowance of the rate limit, as a fraction of a frame period.
+        LEASE_SECRETS ({kid: 32 bytes}, as dlk1.load_secrets gives them) turns on
+        the dlk1 extension: every reserve needs a valid key.  CLOCK gives unix
+        seconds, for the keys' time checks and the leases."""
         if seq_rule not in dc.SEQ_RULES:
             raise ValueError(f"seq_rule {seq_rule!r}")
         per = dict(fanout) if isinstance(fanout, dict) else {}
@@ -175,6 +182,7 @@ class Relay:
         self.rate_tolerance, self.seq_rule = rate_tolerance, seq_rule
         self.max_viewers, self.udp_ttl = max_viewers, udp_ttl
         self.record = record
+        self.secrets, self.clock = lease_secrets, clock
         self.stats = collections.Counter()
         self.url = self.udp_addr = None
         self._ids = itertools.count(1)
@@ -247,7 +255,8 @@ class Relay:
         c["status"] = {"relay": "local mock (contrib/displays/demo/relay.py) on loopback; not wal.sh"}
         c["mock"] = {"spec_default": dc.SPEC_DEFAULT, "seq_rule": self.seq_rule,
                      "rate_tolerance": self.rate_tolerance, "max_viewers": self.max_viewers,
-                     "udp_ttl": self.udp_ttl, "default_ttl": DEFAULT_TTL}
+                     "udp_ttl": self.udp_ttl, "default_ttl": DEFAULT_TTL,
+                     "lease_keys": "dlk1" if self.secrets else None}
         return c
 
     def process_request(self, connection, request):
@@ -312,11 +321,13 @@ class Relay:
         except ConnectionClosed:
             pass
         finally:
+            # the close first: the lease it ends (lease null to the viewers) is
+            # its consequence, and a reader of the record must see it so
+            self._rec(conn.id, "in", "close", {"code": ws.close_code})
             for d in conn.viewing:
                 d.viewers.pop(conn, None)
             if conn.held is not None:
                 self._end(conn.held, expired=False)
-            self._rec(conn.id, "in", "close", {"code": ws.close_code})
 
     async def _control(self, conn, text):
         try:
@@ -356,7 +367,17 @@ class Relay:
         await self._send(conn, d.lease_msg())
 
     async def _reserve(self, conn, m):
-        d = self.displays.get(m.get("display") or self.default)
+        name, claims = m.get("display") or self.default, None
+        if self.secrets is not None:
+            # dlk1: the key first (its checks in the proposal's order), then
+            # the v0.2.1 rules, busy included
+            detail, claims = dlk1.verify(m.get("key"), self.secrets, display=name,
+                                         fmt=m.get("format", "pal16"), now=self.clock())
+            if detail:
+                self.stats["unauthorized:" + detail] += 1
+                return await self._send(conn, {"op": "error", "reason": "unauthorized",
+                                               "detail": detail})
+        d = self.displays.get(name)
         if d is None:
             return await self._error(conn, "bad-format")
         if d.holder is not None and d.holder is not conn:
@@ -364,14 +385,16 @@ class Relay:
                                            "expires": d.expires})
         if conn.held is not None and conn.held is not d:
             self._end(conn.held, expired=False)
-        self._grant(d, conn, m["name"], min(int(m.get("ttl", DEFAULT_TTL)), MAX_TTL),
-                    m.get("format", "pal16"))
+        # with a key, the holder is its sub and the lease never outlives its exp
+        self._grant(d, conn, claims["sub"] if claims else m["name"],
+                    min(int(m.get("ttl", DEFAULT_TTL)), MAX_TTL), m.get("format", "pal16"),
+                    cap=claims["exp"] if claims else None)
         await self._send(conn, d.granted())
         self._fan(d, json.dumps(d.lease_msg()))
 
-    def _grant(self, d, holder, name, ttl, fmt):
+    def _grant(self, d, holder, name, ttl, fmt, cap=None):
         d.holder, d.holder_name, holder.held = holder, name, d
-        d.ttl, d.fmt, d.lease = ttl, fmt, secrets.token_hex(8)
+        d.ttl, d.fmt, d.lease, d.cap = ttl, fmt, secrets.token_hex(8), cap
         d.tat, d.last_seq = -math.inf, None
         self.stats["granted"] += 1
         self._touch(d, announce=False)
@@ -418,14 +441,19 @@ class Relay:
     # ----------------------------------------------------------- leases
 
     def _touch(self, d, announce=True):
-        """Renew D's lease: it now expires ttl seconds from now.  Viewers are
-        sent a fresh lease whenever the whole-second expires changes, so a
-        viewer's tick never marks a live display idle."""
-        expires = math.ceil(time.time() + d.ttl)
+        """Renew D's lease: it now expires ttl seconds from now, but never past
+        a dlk1 key's exp (d.cap).  Viewers are sent a fresh lease whenever the
+        whole-second expires changes, so a viewer's tick never marks a live
+        display idle."""
+        now = self.clock()
+        expires, delay = math.ceil(now + d.ttl), d.ttl
+        if d.cap is not None:
+            expires, delay = min(expires, d.cap), min(delay, d.cap - now)
         changed, d.expires = expires != d.expires, expires
         if d.timer is not None:
             d.timer.cancel()
-        d.timer = asyncio.get_running_loop().call_later(d.ttl, self._expire, d, d.lease)
+        d.timer = asyncio.get_running_loop().call_later(max(0.0, delay), self._expire, d,
+                                                        d.lease)
         if announce and changed:
             self._fan(d, json.dumps(d.lease_msg()))
 
@@ -441,7 +469,7 @@ class Relay:
             d.holder.held = None
             if isinstance(d.holder, _UdpHolder):
                 self._udp_holders.pop((d.holder.addr, d.name), None)
-        d.holder = d.holder_name = d.lease = d.expires = None
+        d.holder = d.holder_name = d.lease = d.expires = d.cap = None
         d.tat, d.last_seq = -math.inf, None
         self.stats["expired" if expired else "released"] += 1
         self._fan(d, json.dumps(d.lease_msg()))
@@ -461,6 +489,9 @@ class Relay:
     def _datagram(self, data, addr):
         cid = f"udp:{addr[0]}:{addr[1]}"
         self._rec(cid, "in", "udp", data)
+        if self.secrets is not None:      # a packet carries no key: no lease for it
+            self.stats["udp:unauthorized"] += 1
+            return
         try:
             p = dc.parse_interop(data)
         except dc.FrameError as e:
