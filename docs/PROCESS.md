@@ -5,7 +5,7 @@ This page walks through how the 17×9 Tetris rebuild was actually done, from the
 **Conventions.**
 - Every claim points at a file, a commit (short sha), a tag, an experiment or a log line. Reproduction commands are copied from the commit notes (`git log --notes`), which also record the output observed and the supported cell (FreeBSD 15.1 amd64, Python 3.12.14 in `/scratch/venvs/tetris-py`).
 - The user's words are quoted verbatim, typos included, with the UTC time of the message. Commit dates are the committer's local time (−04:00).
-- Snapshot: 2026-09-11, `main` at `2974879`; refreshed at each merge to main.
+- Snapshot: 2026-09-11, `main` at `037eaf3`; refreshed at each merge to main.
 - Anything not yet on `main` is marked ***(in progress on branch X)***. Those branches are local worktrees under `/scratch/worktrees/17x9-Tetris-*`, and most of them are not pushed, so they are named, not linked.
 - A shareable page, "Seventeen by Nine", is at <https://claude.ai/code/artifact/ac56b038-af48-45cc-8c0b-0b30a1ed46d5>. It is private until the user shares it.
 - "Heavy" commands (the full gate, thorough property runs, the JVM) ran under `nice -n 10 lockf -k -t 7200 /scratch/locks/heavy.lock …` on a shared host; the prefix is left out below.
@@ -35,7 +35,7 @@ flowchart TD
 | 1 Display | [`impl/python/legacy/`](../impl/python/legacy/), SPEC §2, §10.4 | done; the row→floor mapping is TBD until the hack |
 | 2 Tooling | [`SPEC.md`](../SPEC.md), [`spec/`](../spec/), [`bin/verify.sh`](../bin/verify.sh), [`Makefile`](../Makefile) | v2 sealed; the v3 draft is on main, its seal pending |
 | 3 Reviews | [`experiments/`](../experiments/), [`FREEBSD-TETRIS.md`](FREEBSD-TETRIS.md), SPEC Appendix B, [`spec/conformance/audit.py`](../spec/conformance/audit.py) | 001–007 on main; 008–009 on branches |
-| 4 Protocols | [`PROTOCOL.md`](PROTOCOL.md), [`spec/protocol/`](../spec/protocol/), [`contrib/displays/contract/`](../contrib/displays/contract/) | contract v1 **sealed** (`cd569ef`); the display v0.2.1 pin and kit are on main |
+| 4 Protocols | [`PROTOCOL.md`](PROTOCOL.md), [`spec/protocol/`](../spec/protocol/), [`contrib/displays/contract/`](../contrib/displays/contract/) | contract v1 **sealed** (`cd569ef`); the display v0.2.1 pin and kit are on main; the dlk1 signed lease key (§4.4) is on main as an opt-in relay mode |
 | 5 Display specs | [`contrib/displays/`](../contrib/displays/) | on main: mock relay, contract kit, Clojure core, simulator |
 | 6 Boundaries | SPEC Table 9.1, [`spec/protocol/transcripts/`](../spec/protocol/transcripts/) `e*`, [`contrib/displays/contract/fixtures/`](../contrib/displays/contract/fixtures/), [`relay_conformance.py`](../contrib/displays/contract/relay_conformance.py) | on main |
 | 7 Interaction | SPEC §5, §9, §14; PROTOCOL §2–§4; [`contrib/emacs/tetris-mit.el`](../contrib/emacs/tetris-mit.el) | on main (contract v1 wire) |
@@ -275,7 +275,7 @@ Who passes today:
 The steward first drafted a "display feed" binding inside the contract. It was replaced, once the user published a display protocol, by citing that protocol as normative and external (note on `f3e074d`). The rules in §5.4:
 - the two protocols "never share a connection or an endpoint, and neither carries the other's messages";
 - a game `viewer` is not a display viewer, and a display `source` is not a game `producer`;
-- a feed that bridges them is a game viewer on one side and a display source on the other;
+- a feed that bridges them is a game viewer on one side and a display source on the other. [`demo/feed.py`](../contrib/displays/demo/feed.py) (`687f3dc`) is that feed, and experiment 002 drives Tetris through it (§4.4, §8);
 - adapting the 17 × 9 frame to a display's grid happens in the source, outside the engine.
 
 The display's lease belongs to the display and adds no field to the contract. This follows the user's instruction (2026-09-11, 05:10Z): "this reservation system should be distince from the core of the ssystemm for the polyglot rebuild". `569a74b` updated §5.4 to cite v0.2.1, and it is part of the sealed text.
@@ -314,6 +314,81 @@ The spec's changelog shows three versions in one day, 2026-09-11:
 python spec/protocol/check.py --launch "env PYTHONPATH=impl/python/engine:impl/python/sim python -m tetris_sim.server --mode engine --clock lockstep --port {port}" --server "tcp://127.0.0.1:{port}"
 SERVERS="python python-ws" bin/verify.sh                                            # heavy: the engine gate, then the protocol leg
 sha256sum contrib/displays/contract/wal-sh-display-0.2.1/{spec.md,capabilities.json}
+```
+
+### 4.4 Signed display lease keys (dlk1, experiment 002)
+
+**What we did and why.** The user asked (2026-09-11, 12:40Z) for "the full process for two system with a shared secrets so we don't have the display needing to conntect an api, the resorevation system issues a signed key to wrap the calls to display for the leas of the duration of the Displaay … the client is reppsonnsible for honoring the capabilities". The request named three examples:
+- a user making a reservation;
+- a user playing Tetris, with the event loop driving the display;
+- the demo loop alone.
+
+The steward wrote a proposal, dlk1. The display-reservation repo ran it end to end as its experiment 002 (§8).
+
+**The key.** The proposal is `/scratch/work/tetris-parallel/inputs/dlk1-display-lease-key.md`, sha256 `36a4ea01…1e42`, including the steward's confirmed readings.
+- **Format.** A key is `dlk1.<P>.<S>`. P is the base64url of the canonical JSON of the claims: `v`, `kid`, `iss`, `sub`, `rid`, `display`, `nbf`, `exp`, `fmt` and `jti`, all required and nothing else. S is the HMAC-SHA256 of `"dlk1." + P` under the shared secret named by `kid`.
+- **The relay verifies offline, in order:** shape, decoding, kid, signature (in constant time, before any claim is trusted), claims, display, time (`nbf − 5 ≤ now < exp`), format. The first failure becomes the `detail` of one new error, `{"op":"error","reason":"unauthorized","detail":…}`.
+- **The lease.** The holder shown to viewers is the key's `sub`. `granted.expires` is `min(now + ttl, exp)`, and renewing never passes `exp`. At `exp` the relay ends the lease exactly as on ttl expiry: `lease` holder null, then a black frame. The reservation system is not contacted.
+- **Scope.** It is an opt-in extension. It lifts v0.2.1's NR-AUTH, but only for a relay started with lease secrets. Without them the relay behaves exactly as v0.2.1 and still passes `relay_conformance.py` 88/88 (`548707c` note).
+- **Confirmed readings** (steward, resolved 13:40Z in `reservation-steward-20260911T1252Z-dlk1-clarifications.md`):
+  - `iss` must be exactly `"dres"`, and `nbf ≥ 0`;
+  - base64url is strict and canonical;
+  - P holds exactly one JSON value;
+  - a duplicate claim is `bad-claims`;
+  - `sub`'s length is counted in code points;
+  - one `kid` per relay.
+- **Capabilities are the client's job.** The display advertises `w`, `h`, `fps`, `format` and `palette`. A client that ignores them has its frames dropped, with `rate`, `bad-frame-length` or `bad-format`.
+
+```mermaid
+sequenceDiagram
+  participant U as user or client
+  participant D as dres, the issuer
+  participant R as relay, the verifier
+  participant V as viewers
+  U->>D: auth, reserve, check in
+  D-->>U: display_key, dlk1 signed under the relay's kid
+  Note over D: dres may now stop (K1)
+  U->>R: reserve with the key
+  R->>R: verify offline, signature then display, nbf to exp, fmt
+  R-->>U: granted, expires = min(now + ttl, exp)
+  U->>R: frames in the granted format, at most fps
+  R->>V: frames, holder shown as the key's sub
+  Note over R: at exp
+  R->>V: lease holder null, then a black frame
+  U->>R: late frames
+  R-->>U: not-holder
+```
+
+**The implementations.**
+
+| part | where | commits |
+|---|---|---|
+| issuer, signer and vectors | display-reservation (local repo): `dlk1.cljc`, `dres key`, `--lease-secret` | `2970f63` (sign, verify, 59 vectors), `e5897f6` (the issuer) |
+| verifier | [`contrib/displays/contract/dlk1.py`](../contrib/displays/contract/dlk1.py) | `dcdfd1f` |
+| relay | `demo relay --lease-secret FILE` ([`relay.py`](../contrib/displays/demo/relay.py)) | `548707c` |
+| demo source | `demo source --key` / `--key-file` | `15c395c` |
+| game-to-display feed | [`demo/feed.py`](../contrib/displays/demo/feed.py): a contract-v1 game viewer on one side, a display source with a key on the other | `687f3dc` |
+| fixes from the run | `check_session`: D1; the feed: D2, D3 | `3f58626`, `8e114eb`, `91c6ff5` (merged in `037eaf3`) |
+| Emacs | the display source carries a key; [`tetris-mit-reserved.el`](../contrib/emacs/tetris-mit-reserved.el), `M-x tetris-mit-play-reserved`. The batch variant exits 0 PASS, 1 FAIL, 2 setup, 3 unauthorized, 4 slot ended | `be7d27b`, `8c1929f` (merged in `4c5e28a`) |
+
+The 59 vectors are generated by `2970f63` and published as `inputs/dlk1-vectors.json` (sha256 `1b3d8b02…db754`). Both sides agree 59/59: the Python verifier, and the relay on a live connection (`demo/test_dlk1_vectors.py`).
+
+**The trade-off.** The experiment's README compares the earlier gatekeeper pass-through (A) with this key (D):
+
+| | A: the gatekeeper | D: dlk1 |
+|---|---|---|
+| sole path to the relay | needed | not needed: the relay refuses any `reserve` without a valid key |
+| revocation | immediate | only at `exp`, or by rotating the `kid`, which kills every key under it |
+| offline use | none: the reservation service sits in every frame's path | full: K1 stops `dres` and the display still enforces everything |
+| trust domain | only `dres` holds a signing key | whoever holds a kid's secret can mint keys under it |
+
+The README's reading: D gives the user what was asked, and pays for it in revocation. The two compose: a relay with lease secrets can sit behind a gatekeeper that holds the keys.
+
+**Reproduce.**
+```sh
+cd contrib/displays && python -m pytest -q -p no:cacheprovider contract/test_dlk1.py demo/test_lease_keys.py demo/test_dlk1_vectors.py
+emacs --batch -Q -L contrib/emacs -l tetris-mit-reserved -f tetris-mit-play-reserved-batch \
+  --relay ws://127.0.0.1:PORT/tools/display/ws --key-file KEY.dlk1 --trace spec/conformance/traces/07-hard-drop.json
 ```
 
 ---
@@ -681,6 +756,32 @@ The event promised "a simulator available to test out your concepts on Sunday". 
   - `bin/verify.sh` passes, 26 KAVs.
 
   The same commit fixed two gaps found by the re-run: a `busy` that was schema-invalid when no booking was live, and malformed control answered `unknown-op` instead of `bad-format`. The JVM cell was not run.
+- **Experiment 002, the signed-lease run** (§4.4). It lives in the display-reservation repo at `experiments/002-signed-display-lease/` (`README.org`, `run.sh`), which is local and not on GitHub, so it is cited by path and sha. The result is commit `6a7b9bd`, run `20260911t140928z`. Components: displays `91c6ff5`, emacs `8c1929f`, main `037eaf3`.
+  - **How it runs.** `run.sh` runs unattended on loopback. Each run generates a throwaway secret (mode 0600) and deletes it at exit. `dres` is stopped right after it issues the keys (K1), so every display step runs with no issuer at all.
+  - **Result: 43 of 43 steps pass:**
+
+    | id | scenario | result |
+    |---|---|---|
+    | S1 | a user authenticates, books green-building for 45 s, checks in and gets the key | 7/7 |
+    | K1 | with `dres` stopped, the cut at `exp` | 5/5: `lease` holder null 1 ms after `exp`, then a black frame; the old holder refused 221 times with `not-holder` |
+    | S3 | the demo loop alone, `demo source matrix --key` | 2/2: 120 frames, holder shown as the key's `sub` |
+    | S4 | every refusal, one step each, plus a client that ignores capabilities | 14/14, including relay A's key on relay B → `unknown-kid` |
+    | S2 | Tetris on ws2812 (16 × 16): the lockstep game server, a scripted user replaying KAV-14, `demo feed` with the key | 5/5: 360 frames, 90/90 digests; the feed received 360 and sent 315 |
+    | S2gb | the same on green-building (9 × 17) | 5/5: 360 frames, 90/90 digests; the feed sent 311 |
+    | S2em | the Emacs overlay display on `remote` | 3/3: KAV-07 PASS 121/121 (exit 0); a bad key exits 3 (`bad-signature`); the slot ending mid-game exits 4 |
+    | EV | `check_session --lease-keys` on the relay's record | 0 findings over 4,875 records and 23 connections. A plain v0.2.1 check finds 45, every one a dlk1 rule outside v0.2.1 |
+
+  - **The history, as recorded.** Six harness-debugging runs came first, each fixing a harness bug (`b4bd8ad` note). Then:
+    1. **39/43** (`b4bd8ad`, run `20260911t133908z`). The four failures were D1, D2 and E1. E0 was worked around in the harness at that point.
+    2. **41/43** (`baa4ab6`, run `20260911t135734z`). This had D1, D2, E0 and E1 fixed. S2 and S2gb failed on D3.
+    3. **43/43** (`6a7b9bd`). D3 was fixed and the harness was unchanged.
+
+    The fixes, in the other workstreams' tools, each routed through the steward:
+    - **D1** (`3f58626`): `check_session` charged a black frame to a viewer that joined after a cut.
+    - **D2** (`8e114eb`): `demo feed` did not return when the game server went away.
+    - **D3** (`91c6ff5`): `demo feed` hung when the frame that reached `--frames` arrived while its send loop was idle.
+    - **E0** (`8c1929f`): `--display` collided with Emacs's own option. It is now `--relay-display`.
+    - **E1** (`8c1929f`): a slot cut mid-game exited 1. It now exits 4.
 - **asciinema casts.** [`docs/media/casts/`](media/casts/) holds five recordings with GIFs:
   - the ANSI simulator with the bot;
   - a real REPL session;
@@ -726,6 +827,10 @@ cd contrib/displays && python -m demo sim -d all fishbowl --frames 60           
 5. **Frame size (Q10).** `rgb24` at 256 × 256 is 196,610 bytes, over `max.frameBytes` (65,538). Does the limit bind relay input, or only the sink's wire?
 6. **The level rule with n = 1 (Q7)** maps lit indices to level 1, which does not exist. Is n ≥ 2 required?
 
+**Open questions for the user about signed lease keys** (§4.4; from the dlk1 proposal and experiment 002's README):
+1. **Revocation.** A dlk1 key is a bearer credential for its own window. It can be revoked early only by rotating its `kid`, which kills every key under that kid, and `dres release` cannot reach the display. Is that acceptable? The README lists short-lived renewed keys or a revocation list as dlk2 candidates, if early revocation matters more than offline use.
+2. **Audience.** A key names a `display` but not the relay that serves it, so relays sharing a secret would accept each other's keys. The dlk1 rule is one `kid` per relay (S4 shows relay A's key refused on relay B as `unknown-kid`). Should a dlk2 add an `aud` claim naming the relay?
+
 **In flight.**
 - **SPEC v3.** Its draft is on `main`. It goes to the first of Clojure, Guile and Elisp whose gate passes against the v3 text ([`spec/SEALS.md`](../spec/SEALS.md)).
 - **Merges still to come**, each by the main session after its checks:
@@ -738,4 +843,4 @@ cd contrib/displays && python -m demo sim -d all fishbowl --frames 60           
 
 ---
 
-*Sources: `git log --notes` on every branch; `SPEC.md` and its changelog; `spec/SEALS.md`; `experiments/*/README.md`; `docs/*`; `contrib/*/README.md` and `contrib/displays/contract/README.md`; the fixture files and test bodies under `contrib/displays/`; the steward's gate log `/scratch/work/steward-scratch/gate-contract-v1.log`; `/scratch/work/tetris-parallel/` (OWNERSHIP.md, requests/, inputs/); the display-reservation repo's `README.org`, `SPEC.org` and git log; the session log `/scratch/logs/2026-09-10T11-20-00Z.log`; the user's messages in the Claude session transcripts. I re-ran only `gen_appendix.py --check` (PASS) and `python -m demo list` (the 12 presets as tabled), and counted the fixture cases by reading the JSON (843). Every other result is as recorded in the cited note, log or README.*
+*Sources: `git log --notes` on every branch; `SPEC.md` and its changelog; `spec/SEALS.md`; `experiments/*/README.md`; `docs/*`; `contrib/*/README.md` and `contrib/displays/contract/README.md`; the fixture files and test bodies under `contrib/displays/`; the steward's gate log `/scratch/work/steward-scratch/gate-contract-v1.log`; `/scratch/work/tetris-parallel/` (OWNERSHIP.md, requests/, inputs/); the display-reservation repo's `README.org`, `SPEC.org`, git log and notes, and its `experiments/002-signed-display-lease/README.org`; the dlk1 proposal and vectors in `/scratch/work/tetris-parallel/inputs/`; the session log `/scratch/logs/2026-09-10T11-20-00Z.log`; the user's messages in the Claude session transcripts. I re-ran only `gen_appendix.py --check` (PASS) and `python -m demo list` (the 12 presets as tabled), and counted the fixture cases by reading the JSON (843). Every other result is as recorded in the cited note, log or README.*
