@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/ping.schema.json",
+  "title": "ping and pong (either direction)",
+  "description": "PROTOCOL §3. An application-level barrier: pong echoes id. Not the WebSocket control ping (PROTOCOL §5.5).",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {"enum": ["ping", "pong"]},
+    "id": {"$ref": "common.schema.json#/$defs/ping_id"}
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/state.schema.json",
+  "title": "state (server to clients; producer to display server)",
+  "description": "PROTOCOL §3. A view, never authoritative. An engine server's state follows the stricter state-engine.schema.json.",
+  "type": "object",
+  "required": ["type", "score", "level", "lines"],
+  "properties": {
+    "type": {"const": "state"},
+    "score": {"$ref": "common.schema.json#/$defs/nat"},
+    "level": {"$ref": "common.schema.json#/$defs/nat"},
+    "lines": {"$ref": "common.schema.json#/$defs/nat"},
+    "high_score": {"$ref": "common.schema.json#/$defs/nat"},
+    "phase": {"type": "string", "maxLength": 32},
+    "frame_no": {"$ref": "common.schema.json#/$defs/nat"}
+  }
+}

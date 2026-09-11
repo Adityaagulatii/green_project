@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/hello-server.schema.json",
+  "title": "hello (server to client)",
+  "description": "PROTOCOL §2. The server's answer to an accepted hello. client_role is the role the server accepted for this connection.",
+  "type": "object",
+  "required": ["type", "protocol", "version", "role", "mode", "spec_version", "rows", "cols",
+               "fps", "max_message", "client_role"],
+  "properties": {
+    "type": {"const": "hello"},
+    "protocol": {"const": "17x9-tetris-remote"},
+    "version": {"const": 1},
+    "role": {"const": "server"},
+    "mode": {"$ref": "common.schema.json#/$defs/mode"},
+    "spec_version": {"type": "integer", "minimum": 1},
+    "rows": {"const": 17},
+    "cols": {"const": 9},
+    "fps": {"const": 30},
+    "max_message": {"const": 65536},
+    "client_role": {"$ref": "common.schema.json#/$defs/client_role"},
+    "seed": {"$ref": "common.schema.json#/$defs/seed"},
+    "clock": {"$ref": "common.schema.json#/$defs/clock"}
+  },
+  "if": {"properties": {"mode": {"const": "engine"}}, "required": ["mode"]},
+  "then": {"required": ["seed", "clock"]}
+}

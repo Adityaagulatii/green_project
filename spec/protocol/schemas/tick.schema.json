@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/tick.schema.json",
+  "title": "tick (controller to server, lockstep clock only)",
+  "description": "PROTOCOL §4.2. Advance the engine by frames steps.",
+  "type": "object",
+  "required": ["type", "frames"],
+  "properties": {
+    "type": {"const": "tick"},
+    "frames": {"type": "integer", "minimum": 1, "maximum": 3600}
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/hello-client.schema.json",
+  "title": "hello (client to server)",
+  "description": "PROTOCOL §2. The first message of every connection.",
+  "type": "object",
+  "required": ["type", "protocol", "version", "role"],
+  "properties": {
+    "type": {"const": "hello"},
+    "protocol": {"const": "17x9-tetris-remote"},
+    "version": {"const": 1},
+    "role": {"$ref": "common.schema.json#/$defs/client_role"},
+    "client": {"type": "string"},
+    "seed": {"$ref": "common.schema.json#/$defs/seed"}
+  }
+}

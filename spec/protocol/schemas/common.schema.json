@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/common.schema.json",
+  "title": "17x9 Tetris contract v1: shared definitions",
+  "description": "Definitions shared by the message schemas of docs/PROTOCOL.md (contract v1). JSON Schema's \"integer\" admits 1.0; the protocol does not (PROTOCOL §1.5), and spec/protocol/check.py enforces the stricter rule.",
+  "$defs": {
+    "nat": {"type": "integer", "minimum": 0},
+    "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "action": {
+      "description": "SPEC §5.1",
+      "enum": ["left", "right", "soft_drop", "hard_drop", "rotate_cw", "rotate_ccw", "rotate_180", "hold"]
+    },
+    "phase": {
+      "description": "SPEC §9.1: exactly the SPEC's phase names",
+      "enum": ["countdown", "playing", "clearing", "gameover"]
+    },
+    "client_role": {"enum": ["controller", "viewer", "producer"]},
+    "mode": {"enum": ["engine", "display"]},
+    "clock": {"enum": ["realtime", "lockstep"]},
+    "channel": {"type": "integer", "minimum": 0, "maximum": 255},
+    "rgb": {
+      "type": "array",
+      "prefixItems": [{"$ref": "#/$defs/channel"}, {"$ref": "#/$defs/channel"}, {"$ref": "#/$defs/channel"}],
+      "items": false,
+      "minItems": 3
+    },
+    "row": {"type": "array", "items": {"$ref": "#/$defs/rgb"}, "minItems": 9, "maxItems": 9},
+    "rows": {
+      "description": "SPEC §2.1: 17 rows of 9 cells, row 0 at the top",
+      "type": "array", "items": {"$ref": "#/$defs/row"}, "minItems": 17, "maxItems": 17
+    },
+    "step_event": {
+      "description": "One event of E_k as passed to step k: [action, down]",
+      "type": "array",
+      "prefixItems": [{"$ref": "#/$defs/action"}, {"type": "boolean"}],
+      "items": false,
+      "minItems": 2
+    },
+    "ping_id": {
+      "anyOf": [{"type": "integer"}, {"type": "string", "maxLength": 64}]
+    },
+    "error_code": {
+      "description": "PROTOCOL §6. A v1 server sends only these; a client MUST tolerate others.",
+      "enum": ["malformed", "too_large", "unknown_type", "hello_required", "version", "role",
+               "bad_hello", "busy", "forbidden", "bad_event", "bad_tick", "bad_frame",
+               "bad_state", "bad_ping", "digest", "too_many_errors"]
+    }
+  }
+}

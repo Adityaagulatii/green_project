@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/message.schema.json",
+  "title": "any contract v1 message",
+  "description": "Dispatches on type. Direction-specific profiles (hello-server, frame-engine, state-engine) are chosen by the checker from context.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {"enum": ["hello", "event", "tick", "frame", "state", "ping", "pong", "error"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"const": "hello"}, "role": {"const": "server"}}, "required": ["type", "role"]},
+     "then": {"$ref": "hello-server.schema.json"}},
+    {"if": {"properties": {"type": {"const": "hello"}, "role": {"not": {"const": "server"}}}, "required": ["type"]},
+     "then": {"$ref": "hello-client.schema.json"}},
+    {"if": {"properties": {"type": {"const": "event"}}}, "then": {"$ref": "event.schema.json"}},
+    {"if": {"properties": {"type": {"const": "tick"}}}, "then": {"$ref": "tick.schema.json"}},
+    {"if": {"properties": {"type": {"const": "frame"}}}, "then": {"$ref": "frame.schema.json"}},
+    {"if": {"properties": {"type": {"const": "state"}}}, "then": {"$ref": "state.schema.json"}},
+    {"if": {"properties": {"type": {"enum": ["ping", "pong"]}}}, "then": {"$ref": "ping.schema.json"}},
+    {"if": {"properties": {"type": {"const": "error"}}}, "then": {"$ref": "error.schema.json"}}
+  ]
+}

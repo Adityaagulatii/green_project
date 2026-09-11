@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://17x9-tetris.invalid/contract/v1/error.schema.json",
+  "title": "error (server to client)",
+  "description": "PROTOCOL §6.",
+  "type": "object",
+  "required": ["type", "code", "message"],
+  "properties": {
+    "type": {"const": "error"},
+    "code": {"$ref": "common.schema.json#/$defs/error_code"},
+    "message": {"type": "string"}
+  }
+}
