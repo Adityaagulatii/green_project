@@ -8,6 +8,7 @@ are ordinary input traces. Fully deterministic: no randomness.
 """
 
 from dataclasses import replace
+from itertools import pairwise
 
 from tetris_engine import core
 from tetris_engine import tables as T
@@ -38,7 +39,7 @@ def evaluate(grid, lines, weights=WEIGHTS):
         top = next((r for r in range(T.ROWS) if grid[r][c] != "."), T.ROWS)
         heights.append(T.ROWS - top)
         holes += sum(1 for r in range(top, T.ROWS) if grid[r][c] == ".")
-    bump = sum(abs(a - b) for a, b in zip(heights, heights[1:]))
+    bump = sum(abs(a - b) for a, b in pairwise(heights))
     top_penalty = max(0, max(heights) - 11)
     return (weights["height"] * sum(heights) + weights["lines"] * lines
             + weights["holes"] * holes + weights["bump"] * bump
