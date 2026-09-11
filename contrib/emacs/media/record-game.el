@@ -54,6 +54,7 @@
 (defvar tetris-mit-record--next 0 "Index of the next frame to show.")
 (defvar tetris-mit-record--stalls 0 "Ticks of the provider that found no frame.")
 (defvar tetris-mit-record--failure nil "Why the replay failed, or nil.")
+(defvar tetris-mit-record--started nil "When the playback started (`float-time').")
 
 (defun tetris-mit-record--groups (events frames)
   "EVENTS, [FRAME ACTION DOWN] sorted by frame, over FRAMES, as message groups.
@@ -141,10 +142,16 @@ message that follows it is in."
                           tetris-mit-record--stalls (if pass "PASS" "FAIL"))))
     (when tetris-mit-record--failure
       (setq summary (concat summary " (" tetris-mit-record--failure ")")))
+    ;; The wall-clock time of the playback: a loaded host runs Emacs's
+    ;; 30 FPS timer late, which no stall counts.
+    (setq summary (format "%s\nplayed %d frames in %.1f s (%.1f s at %d FPS)"
+                          summary (length frames)
+                          (- (float-time) tetris-mit-record--started)
+                          (/ (length frames) (float tetris-mit-fps)) tetris-mit-fps))
     (when (process-live-p tetris-mit-record--proc)
       (delete-process tetris-mit-record--proc))
     (tetris-mit-stop-server tetris-mit-record--server)
-    (message "%s" summary)
+    (message "%s" (car (split-string summary "\n")))
     (run-at-time 3 nil #'tetris-mit-record--finish summary pass)))
 
 (defun tetris-mit-record--finish (summary pass)
@@ -154,8 +161,9 @@ message that follows it is in."
       (with-temp-file file (insert summary "\n"))))
   (kill-emacs (if pass 0 1)))
 
-(defun tetris-mit-record-start ()
-  "Start the server, drive it with the trace, and play its frames."
+(defun tetris-mit-record-setup ()
+  "Show the empty display, its header line and the game's description.
+This runs when the file is loaded, before Emacs first draws the screen."
   (let ((trace (tetris-mit-read-trace tetris-mit-record-trace))
         (buffer (tetris-mit-display-buffer)))
     (setq tetris-mit-record--trace trace
@@ -179,20 +187,33 @@ message that follows it is in."
       (set-window-point (selected-window) (point)))
     (message "Seed %d: %d recorded inputs into the SPEC engine server, %d frames at %d FPS"
              (alist-get 'seed trace) (length (alist-get 'events trace))
-             (alist-get 'frames trace) tetris-mit-fps)
+             (alist-get 'frames trace) tetris-mit-fps)))
+
+(defun tetris-mit-record-start ()
+  "Start the server, drive it with the trace, and play its frames."
+  (let ((trace tetris-mit-record--trace)
+        (buffer (tetris-mit-display-buffer)))
     (setq tetris-mit-record--server
           (tetris-mit-start-server "--mode" "engine" "--clock" "lockstep"))
     (setq tetris-mit-record--proc
           (tetris-mit-open "tetris-mit-record" "127.0.0.1" (cdr tetris-mit-record--server)
                            "controller" #'tetris-mit-record--receive
                            `((seed . ,(alist-get 'seed trace)))))
+    ;; An invisible marker (it sets the terminal title): record.sh folds
+    ;; the startup before it into the cast's first frame.
+    (unless noninteractive
+      (send-string-to-terminal "\e]2;tetris-mit-record: play\a"))
+    (setq tetris-mit-record--started (float-time))
     (tetris-mit-display-set-provider #'tetris-mit-record--provider buffer)))
 
+;; record.sh also sets the first two in its init file, before the
+;; terminal is set up; they are repeated for "emacs -nw -Q -l".
 (setq inhibit-startup-screen t
       ;; Fewer, later garbage collections: a long one is a visible stall.
       gc-cons-threshold (* 64 1024 1024))
 (menu-bar-mode -1)
 (setq tetris-mit-cell-string (or (getenv "TETRIS_MIT_CELL") "   "))
+(tetris-mit-record-setup)
 (run-at-time 0.3 nil #'tetris-mit-record-start)
 
 ;;; record-game.el ends here

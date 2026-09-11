@@ -30,13 +30,18 @@ trace() {
 }
 
 # emacs -nw is "emacs -Q" plus one init file, in a throwaway init
-# directory: it runs before the terminal is set up, and turns off
-# xterm.el's capability queries, which a headless recorder never answers
-# (each would cost its 2 s timeout at startup).
+# directory. It runs before the terminal is set up: it turns off xterm.el's
+# capability queries, which a headless recorder never answers (each would
+# cost its 2 s timeout at startup), the menu bar and the startup screen.
 cast() {
 	work=$(mktemp -d)
 	trap 'rm -rf "$work"' EXIT
-	echo '(setq xterm-query-timeout nil)' > "$work/init.el"
+	cat > "$work/init.el" <<-'INIT'
+	;;; init.el --- throwaway init for record.sh  -*- lexical-binding: t -*-
+	(setq xterm-query-timeout nil
+	      inhibit-startup-screen t)
+	(menu-bar-mode -1)
+	INIT
 	summary="$work/summary.txt"
 	asciinema rec --overwrite --headless --quiet -f asciicast-v2 \
 		--window-size "$SIZE" \
@@ -46,9 +51,34 @@ cast() {
 -l contrib/emacs/media/record-game.el; \
 echo 'MIT Green Building: 9 x 17 windows, tetris-mit-display.el in emacs -nw'; \
 cat '$summary'" \
-		"$HERE/$NAME.cast"
+		"$work/raw.cast"
 	cat "$summary"
 	grep -q -- '-- PASS$' "$summary"
+	trim "$work/raw.cast" "$HERE/$NAME.cast"
+}
+
+# Emacs's startup and the server's launch take a few seconds that vary
+# with host load, and Emacs draws *scratch* before it loads
+# record-game.el. record-game.el writes an invisible marker (an OSC 2
+# terminal title) when the game starts. Everything the terminal received
+# before it is folded into one event at t = 0, byte for byte, so the cast
+# opens on the empty display and the rest keeps its recorded timing.
+trim() {  # trim RAW OUT
+	"$PY" - "$1" "$2" <<-'PY'
+	import json, sys
+	src, dst = sys.argv[1:]
+	with open(src, encoding="utf-8") as fh:
+	    lines = fh.read().splitlines()
+	events = [json.loads(line) for line in lines[1:]]
+	cut = next(i for i, e in enumerate(events) if "tetris-mit-record: play" in e[2])
+	t0 = events[cut][0]
+	lead = "".join(e[2] for e in events[:cut + 1] if e[1] == "o")
+	out = [lines[0], json.dumps([0.0, "o", lead])]
+	out += [json.dumps([round(e[0] - t0, 6), e[1], e[2]]) for e in events[cut + 1:]]
+	with open(dst, "w", encoding="utf-8") as fh:
+	    fh.write("\n".join(out) + "\n")
+	print(f"folded {t0:.2f} s of startup ({cut + 1} events) into t = 0")
+	PY
 }
 
 # --idle-time-limit 6 keeps the game's real timing: its longest still

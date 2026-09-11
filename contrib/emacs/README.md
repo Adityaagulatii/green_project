@@ -154,7 +154,7 @@ The CLI plays the events on the SPEC engine, shows every frame, and snapshots th
 
 ![The Emacs display in emacs -nw: a 9 x 17 game with wide windows, from the countdown through line clears and game over to the next game](media/green-building-9x17.gif)
 
-[`media/green-building-9x17.cast`](media/green-building-9x17.cast) (asciicast v2, 81 KB) and its GIF (301 KB, 39 s) show the stock overlay display, `tetris-mit-display.el`, unpatched, in `emacs -nw` on a truecolor terminal (80 × 24).
+[`media/green-building-9x17.cast`](media/green-building-9x17.cast) (asciicast v2, 77 KB) and its GIF (254 KB, 39 s) show the stock overlay display, `tetris-mit-display.el`, unpatched, in `emacs -nw` on a truecolor terminal (80 × 24).
 
 **Geometry.** The grid is the facade's: **9 windows wide and 17 tall**, 153 overlays, with row 0 at the top. Each window is 3 columns × 1 line: the recording sets the existing option `tetris-mit-cell-string` to three spaces. The GIF's terminal cell is 9.6 × 19.2 px (DejaVu Sans Mono, 16 px, line height 1.2), so a window is 28.9 × 19.2 px, **1.5 : 1**, the cell aspect of the Green Building preset (`green-building` in the wal.sh display spec v0.2.1). The preset's **gap of 0.35** (masonry between windows) is **not drawn**: the display paints adjacent cells edge to edge, so same-coloured neighbours merge. Drawing the masonry would need a change to the display, which this recording deliberately does not make.
 
@@ -175,9 +175,14 @@ The status line under the grid is the display's own. The last screen of the cast
 
 ```
 green-building-emacs: 923/923 digests match the trace, 0 stalls -- PASS
+played 923 frames in 31.9 s (30.8 s at 30 FPS)
 ```
 
-A "stall" is a 1/30 s tick with no frame ready. The recording is timed as played, and agg's idle limit (6 s) is longer than the game's longest still stretch (the 5 s white wait), so the GIF keeps the game's real timing.
+**Timing.**
+- A "stall" is a 1/30 s tick with no frame ready.
+- A loaded host also runs Emacs's 30 FPS timer late, and no stall counts that. The second line shows it: this take was made at a load average of 8 to 9 on 4 CPUs, under `nice`, and played 3.5 % slow.
+- The cast opens on the empty display. `record.sh` folds the startup into the first frame at t = 0: that is Emacs starting, drawing `*scratch*`, loading the display, and launching the server, 1.2 s here. The fold keeps the output byte for byte and changes only the timestamps. `record-game.el` marks where the game starts, with an invisible terminal-title sequence.
+- The rest is timed as played. agg's idle limit (6 s) is longer than the game's longest still stretch (the 5 s white wait), so the GIF keeps the recorded timing.
 
 **Reproduce**, from the repository root:
 
