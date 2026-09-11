@@ -1,0 +1,26 @@
+# ruff settings for `gmake lint-python`, `gmake fmt` and `gmake fmt-check`.
+#
+# impl/python/legacy/ is the byte-identical differential oracle (the original
+# tetris.py + utilities/). It must never be linted into changes or reformatted.
+# force-exclude keeps it excluded even when a path under it is passed explicitly
+# (editor integrations, `ruff format impl/python/legacy/tetris.py`).
+target-version = "py312"
+line-length = 88
+extend-exclude = ["impl/python/legacy"]
+force-exclude = true
+# first-party roots, so import sorting groups the engine/sim/test modules correctly
+src = [
+  "impl/python/engine",
+  "impl/python/sim",
+  "impl/python/tests",
+  "impl/python/conformance",
+]
+
+[lint]
+# ruff's built-in default rule set grows between releases (0.16 enables dozens of
+# families). Pin the selection so a ruff upgrade can't turn the lint red.
+#   E4/E7/E9, F  pycodestyle errors + pyflakes (ruff's classic default)
+#   I            import sorting
+#   B            bugbear
+#   UP           pyupgrade for py312
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]

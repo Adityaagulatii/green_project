@@ -7,7 +7,7 @@ uses global randomness.
 """
 
 from dataclasses import dataclass, replace
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from . import tables as T
 from .prng import seed_state, shuffle_bag
@@ -50,7 +50,7 @@ class State:
     boot: bool
     board: tuple  # PAD_ROWS strings of PAD_COLS cell codes
     active: Piece
-    hold: Optional[Held]
+    hold: Held | None
     hold_available: bool
     rng: int
     bag: tuple
@@ -66,10 +66,10 @@ class State:
     r180_available: bool
     hard_available: bool
     inbox: tuple
-    resume: Optional[Resume]
-    flash: Optional[tuple]
+    resume: Resume | None
+    flash: tuple | None
     pending_gameover: bool
-    gameover_board: Optional[tuple]
+    gameover_board: tuple | None
     gameover_dcd: int
     frame: int
     spawns: int

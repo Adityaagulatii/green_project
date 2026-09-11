@@ -4,3 +4,4 @@ __pycache__/
 .hypothesis/
 /out/
 *.demo.html
+.venv/
