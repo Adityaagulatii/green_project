@@ -1,0 +1,272 @@
+{
+  "name" : "wal.sh display",
+  "spec" : "0.2.1",
+  "spec_url" : "https://wal.sh/tools/display/spec",
+  "default" : "cga40",
+  "params" : [ "d", "w", "h", "px", "gap", "aspect", "src", "palette", "fps" ],
+  "formats" : [ "pal16", "hex" ],
+  "frame" : {
+    "format" : "pal16",
+    "bytes" : "w*h, one byte per cell, value 0-15 = palette index, row-major; optional 2-byte big-endian sequence prefix",
+    "hex" : "h lines of w hex digits, LF-terminated, as a text message; the same information",
+    "also_accepted" : "rgb24 (w*h*3 bytes) at the relay or a shim only; each cell is mapped to the nearest palette entry before fan-out. The sink never quantizes."
+  },
+  "max" : {
+    "w" : 256,
+    "h" : 256,
+    "cells" : 65536,
+    "fps" : 60,
+    "ttl" : 900,
+    "frameBytes" : 65538
+  },
+  "endpoints" : {
+    "ws" : "wss://wal.sh/tools/display/ws",
+    "view" : "wss://wal.sh/tools/display/ws then {\"op\":\"view\",\"display\":...}",
+    "reserve" : "wss://wal.sh/tools/display/ws then {\"op\":\"reserve\",\"name\":...,\"display\":...,\"ttl\":...}",
+    "page" : "https://wal.sh/tools/display/?d=<display>"
+  },
+  "reservation" : {
+    "max_ttl" : 900,
+    "renew" : "any frame or {\"op\":\"renew\"}",
+    "one_holder_per_display" : true
+  },
+  "same_page" : {
+    "window.display" : [ "w", "h", "makeframe", "send" ],
+    "postMessage" : "{frame}; the page announces {display:\"ready\", w, h, d} to its opener or parent once mounted"
+  },
+  "palette" : [ "#000000", "#0000AA", "#00AA00", "#00AAAA", "#AA0000", "#AA00AA", "#AA5500", "#AAAAAA", "#555555", "#5555FF", "#55FF55", "#55FFFF", "#FF5555", "#FF55FF", "#FFFF55", "#FFFFFF" ],
+  "palettes" : {
+    "cga" : [ "#000000", "#0000AA", "#00AA00", "#00AAAA", "#AA0000", "#AA00AA", "#AA5500", "#AAAAAA", "#555555", "#5555FF", "#55FF55", "#55FFFF", "#FF5555", "#FF55FF", "#FFFF55", "#FFFFFF" ],
+    "c64" : [ "#000000", "#FFFFFF", "#880000", "#AAFFEE", "#CC44CC", "#00CC55", "#0000AA", "#EEEE77", "#DD8855", "#664400", "#FF7777", "#333333", "#777777", "#AAFF66", "#0088FF", "#BBBBBB" ],
+    "gb" : [ "#0F380F", "#306230", "#8BAC0F", "#9BBC0F" ],
+    "mono" : [ "#000000", "#FFFFFF" ],
+    "grey8" : [ "#000000", "#242424", "#494949", "#6D6D6D", "#929292", "#B6B6B6", "#DBDBDB", "#FFFFFF" ],
+    "pico8" : [ "#000000", "#1D2B53", "#7E2553", "#008751", "#AB5236", "#5F574F", "#C2C3C7", "#FFF1E8", "#FF004D", "#FFA300", "#FFEC27", "#00E436", "#29ADFF", "#83769C", "#FF77A8", "#FFCCAA" ]
+  },
+  "displays" : {
+    "trs80" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 10,
+      "palette" : "mono",
+      "note" : "largest field inside a 32 x 16 text screen",
+      "fps" : 30,
+      "levels" : 2,
+      "mono" : true,
+      "h" : 12,
+      "kind" : "text-mode",
+      "gap" : 0.12
+    },
+    "ws2812" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 16,
+      "palette" : "cga",
+      "note" : "ESP32 + 16 x 16 LED matrix",
+      "fps" : 30,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 16,
+      "kind" : "panel",
+      "gap" : 0.3
+    },
+    "green-building" : {
+      "aspect" : 1.5,
+      "format" : "pal16",
+      "building" : "MIT Green Building (Building 54), Cambridge MA",
+      "w" : 9,
+      "palette" : "cga",
+      "note" : "Building 54: wide windows with masonry between them",
+      "fps" : 30,
+      "levels" : 16,
+      "year" : 2012,
+      "mono" : false,
+      "h" : 17,
+      "kind" : "facade",
+      "gap" : 0.35,
+      "pixels" : 153
+    },
+    "cga40" : {
+      "aspect" : 1.2,
+      "format" : "pal16",
+      "w" : 40,
+      "palette" : "cga",
+      "note" : "IBM PC CGA 40-column text mode: 320 x 200 on a 4:3 tube, pixel aspect 6:5",
+      "fps" : 30,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 25,
+      "kind" : "text-mode",
+      "gap" : 0
+    },
+    "gameboy" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 10,
+      "palette" : "gb",
+      "note" : "same geometry, named for the original",
+      "fps" : 30,
+      "levels" : 4,
+      "mono" : false,
+      "h" : 18,
+      "kind" : "field",
+      "gap" : 0
+    },
+    "remote" : {
+      "aspect" : 1.5,
+      "format" : "pal16",
+      "w" : 9,
+      "palette" : "cga",
+      "note" : "frame sink; needs &src=ws://host:port",
+      "fps" : 30,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 17,
+      "kind" : "facade",
+      "gap" : 0.35
+    },
+    "c64" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 10,
+      "palette" : "c64",
+      "note" : "40 x 25 screen; the full field fits",
+      "fps" : 30,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 20,
+      "kind" : "field",
+      "gap" : 0.12
+    },
+    "tetris" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 10,
+      "palette" : "cga",
+      "note" : "standard field",
+      "fps" : 30,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 20,
+      "kind" : "field",
+      "gap" : 0.12
+    },
+    "hub75" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 64,
+      "palette" : "cga",
+      "note" : "ESP32 + 64 x 32 HUB75 panel",
+      "fps" : 60,
+      "levels" : 16,
+      "mono" : false,
+      "h" : 32,
+      "kind" : "panel",
+      "gap" : 0.15
+    },
+    "blinkenlights" : {
+      "aspect" : 1.6,
+      "format" : "pal16",
+      "source_url" : "https://awards.mediaarchitecture.org/mab/project/126",
+      "run" : "2001-09-12 to 2002-02-23",
+      "building" : "Haus des Lehrers, Alexanderplatz, Berlin",
+      "architect" : "Hermann Henselmann (1961)",
+      "w" : 18,
+      "palette" : "mono",
+      "native_protocol" : "BLP",
+      "note" : "Haus des Lehrers, Berlin, 2001: 8 floors x 18 windows, one lamp and relay each, on or off",
+      "fps" : 30,
+      "levels" : 2,
+      "year" : 2001,
+      "luminance" : "low; night operation only",
+      "mono" : true,
+      "h" : 8,
+      "light_source" : "150 W halogen lamp per window on a tripod, relay-switched, windows painted white",
+      "control" : "relay control cables to one floor; three networked computers: control, playback, telephone interactivity",
+      "kind" : "facade",
+      "gap" : 0.3,
+      "viewing_distance" : "long; Alexanderplatz",
+      "pixels" : 144,
+      "owner" : "WBM"
+    },
+    "dc32" : {
+      "aspect" : 1,
+      "format" : "pal16",
+      "w" : 10,
+      "palette" : "gb",
+      "note" : "DEF CON 32 badge, Game Boy field",
+      "fps" : 30,
+      "levels" : 4,
+      "mono" : false,
+      "h" : 18,
+      "kind" : "badge",
+      "gap" : 0
+    },
+    "arcade" : {
+      "aspect" : 1.3,
+      "format" : "pal16",
+      "building" : "Bibliotheque nationale de France, Paris",
+      "w" : 20,
+      "palette" : "grey8",
+      "native_protocol" : "MCUF maxval=7",
+      "note" : "Bibliotheque nationale de France, Paris, 2002: 20 x 26 windows, 8 grey levels",
+      "fps" : 30,
+      "levels" : 8,
+      "year" : 2002,
+      "mono" : true,
+      "h" : 26,
+      "kind" : "facade",
+      "gap" : 0.3,
+      "pixels" : 520
+    }
+  },
+  "unconfigured" : {
+    "stereoscope" : {
+      "building" : "Toronto City Hall, two curved towers",
+      "year" : 2008,
+      "pixels" : 960,
+      "levels" : 16,
+      "mono" : true,
+      "native_protocol" : "MCUF maxval=15",
+      "note" : "per-tower grid not given in the sources consulted; needs w,h per tower and a two-tower mapping"
+    },
+    "cira-centre" : {
+      "building" : "Cira Centre, Philadelphia",
+      "year" : 2013,
+      "pixels" : 1400,
+      "levels" : "RGB LED",
+      "note" : "Pong 2013, Tetris 2014 (north and south faces); LED grid dimensions not published in the sources consulted"
+    },
+    "schonherz-matrix" : {
+      "building" : "Schonherz dormitory, Budapest",
+      "note" : "annual student display; grid not given in the sources consulted"
+    }
+  },
+  "interop" : {
+    "udp_port" : 2323,
+    "accepts" : [ "BLP (magic DEADBEEF, 1 byte/pixel 0|1)", "MCUF (magic 23542666, channels 1 or 3, any maxval; scaled to 0-15)" ],
+    "note" : "Blinkenlights-family packets over UDP or as WebSocket binary, at the relay. Display chosen by width x height. UDP lease is 5 s per packet, sender address as holder.",
+    "reference" : "https://wiki.blinkenarea.org/index.php/BlinkenlightsProtocolEnglish",
+    "equivalence" : "pal16 frame == MCUF payload with channels=1, maxval=15, header removed"
+  },
+  "properties" : {
+    "owner" : "building owner",
+    "gap" : "space between cells as a fraction of a cell",
+    "viewing_distance" : "typical distance to the viewer; sets the minimum useful cell size",
+    "schema_note" : "the descriptive fields follow the Media Architecture Biennale catalogue (facade type, kind of light creation, resolution, luminance, urban situation), so entries can be filled from awards.mediaarchitecture.org",
+    "source_url" : "where the properties were taken from",
+    "light_source" : "what makes a cell bright (lamp + relay, LED, backlit glass)",
+    "mono" : "true: cells are brightness levels 0..levels-1, drawn as a grey ramp; false: cells are palette indices 0-15",
+    "kind" : "facade | badge | text-mode | field | panel",
+    "levels" : "distinct states per cell: 2 (on/off), 4, 8, 16",
+    "native_protocol" : "the protocol the original installation spoke; the relay accepts it in addition to pal16",
+    "architect" : "building architect and year",
+    "w,h" : "grid in cells, row 0 at top",
+    "aspect" : "cell width / cell height as seen by the viewer (windows are wider than tall)",
+    "quantization" : "a pal16 frame on a display with n levels: index 0 -> 0, otherwise max(1, round(index * (n-1) / 15))",
+    "luminance" : "day/night usability"
+  },
+  "status" : {
+    "relay" : "not yet hosted; see the spec's experiments section"
+  }
+}

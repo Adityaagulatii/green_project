@@ -1,0 +1,39 @@
+{
+  "$comment": "wal.sh/tools/display v0.2.1 control messages; one schema per op",
+  "spec": "0.2.1",
+  "to_relay": [
+    "view",
+    "reserve",
+    "renew",
+    "release"
+  ],
+  "from_relay": [
+    "caps",
+    "lease",
+    "granted",
+    "busy",
+    "error"
+  ],
+  "reasons": [
+    "not-holder",
+    "bad-frame-length",
+    "rate",
+    "bad-format",
+    "unknown-op"
+  ],
+  "fanout_formats": [
+    "pal16",
+    "hex"
+  ],
+  "source_formats": [
+    "pal16",
+    "hex",
+    "rgb24"
+  ],
+  "frames": {
+    "pal16": "binary, w*h bytes 0..15, optional 2-byte big-endian sequence prefix",
+    "hex": "text, h lines of w hex digits, LF-terminated, optional closing blank line; first character is not {",
+    "rgb24": "binary, w*h*3 bytes, optional 2-byte prefix; relay input only"
+  },
+  "unknown_fields": "ignored: every schema has additionalProperties true"
+}

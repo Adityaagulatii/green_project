@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/busy.json",
+  "title": "busy",
+  "description": "wal.sh/tools/display v0.2.1, Wire protocol: the busy message.",
+  "type": "object",
+  "required": [
+    "op",
+    "holder",
+    "expires"
+  ],
+  "properties": {
+    "op": {
+      "const": "busy"
+    },
+    "holder": {
+      "type": "string"
+    },
+    "expires": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "unix seconds"
+    }
+  },
+  "additionalProperties": true
+}

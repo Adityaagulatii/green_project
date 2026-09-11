@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aygp-dr/17x9-Tetris/contrib/displays/contract/schemas/release.json",
+  "title": "release",
+  "description": "wal.sh/tools/display v0.2.1: end the lease; no fields. Closing the socket does the same.",
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "const": "release"
+    }
+  },
+  "additionalProperties": true
+}
