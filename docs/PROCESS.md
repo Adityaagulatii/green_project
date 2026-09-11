@@ -5,7 +5,8 @@ This page walks through how the 17×9 Tetris rebuild was actually done, from the
 **Conventions.**
 - Every claim points at a file, a commit (short sha), a tag, an experiment or a log line. Reproduction commands are copied from the commit notes (`git log --notes`), which also record the output observed and the supported cell (FreeBSD 15.1 amd64, Python 3.12.14 in `/scratch/venvs/tetris-py`).
 - The user's words are quoted verbatim, typos included, with the UTC time of the message. Commit dates are the committer's local time (−04:00).
-- The snapshot is as of 2026-09-11: `main` is at `5d091bb`. Anything not yet on `main` is marked ***(in progress on branch X)***. Those branches are local worktrees under `/scratch/worktrees/17x9-Tetris-*`, and most of them are not pushed, so they are named, not linked.
+- Snapshot: 2026-09-11 ~09:15Z; refreshed at each merge to main.
+- `main` is at `5d091bb`. Anything not yet on `main` is marked ***(in progress on branch X)***. Those branches are local worktrees under `/scratch/worktrees/17x9-Tetris-*`, and most of them are not pushed, so they are named, not linked.
 - "Heavy" commands (the full gate, thorough property runs, the JVM) ran under `nice -n 10 lockf -k -t 7200 /scratch/locks/heavy.lock …` on a shared host; the prefix is left out below.
 
 ## Overview
@@ -250,9 +251,18 @@ The machine-readable half is in `spec/protocol/`:
 - experiment 007 (`faf7763`): the v0 server fails 20 of 21 transcripts, while a v1 shim passes 21/21 over TCP and through a WebSocket front, and every mutant is rejected by the gate it targets.
 
 Who passes today:
+- **The full contract-v1 gate** passed on `spec/contract` at `fb816c1`, ending 2026-09-11 09:02:26Z (steward log `/scratch/work/steward-scratch/gate-contract-v1.log`, `GATE: PASS`, rc 0). At that commit `docs/PROTOCOL.md` has sha256 `6ac5ec0f…fe51`; it changed from `f3e074d`'s `3c06d4f4…` when `569a74b` rewrote §5.4 for display v0.2.1. The run covered:
+  - SPEC Appendix A;
+  - python and hy at 14/14 traces (`981baab4…`);
+  - the engine self-tests: the corrupted trace through both drivers, 6 mutant engines and the hand-edited Appendix A;
+  - 9 protocol self-tests: the schemas, a corrupted transcript, 7 mutant servers rejected, and the transparent gatekeeper and WebSocket front both passing;
+  - the 21 transcripts, reproducible from the traces;
+  - `python` at 21/21 over TCP and `python-ws` at 21/21 over WebSocket, contract-set sha256 `e45524fa…7c4d`.
+
+  `spec/contract` had merged `impl/python-ws` (`8b7a6a7`) and added the `python-ws` line to `server()` in `bin/verify.sh` (`fb816c1`).
 - **The native Python v1 server** (`676088b`): 21/21 over TCP and 21/21 over WebSocket, contract-set sha256 `e45524fa…7c4d`.
 - **A Clojure server on the cljc engine** (`4d88c44`, on `impl/clojure`): 21/21 over TCP.
-- **Clients.** The Hy client (`3504236`, on `impl/hy-client`) and the Emacs client speak v0. The contract-v1 seal is pending until one client passes `check.py --session` (`spec/SEALS.md`, contract seals).
+- **Clients.** The Hy client (`3504236`, on `impl/hy-client`) and the Emacs client on `main` speak v0. The contract-v1 seal now waits only on one client passing `check.py --session` on a KAV replay recorded by `proxy.py --record` (`spec/SEALS.md`, contract seals). The steward asked the Emacs workstream for it (`steward-emacs-20260911T0702Z-contract-v1-client.md`) and reports it under way *(in progress on branch `feat/emacs-client`)*.
 
 ### 4.2 Separation from the display protocol (PROTOCOL §5.4)
 
@@ -477,8 +487,8 @@ Conditions 2, 3 and 6 are exercised by the mock relay's tests, and the others co
 | ttl 900 vs 901 | 900, 901 and 5000 → a 900 s lease (the mock clamps); 0, −1, 1.5, `"10"`, null, true → `bad-format`; 1.0 accepted | `test_ttl_bounds` | written; clamping rather than refusing is a mock choice |
 | 32 vs 33 viewers | the 33rd view is closed with 1013; the cap is per display | `test_viewer_cap_closes_the_extra_viewer` | partial: the test sets a cap of 2 and checks the 3rd, not 32/33 literally |
 | lease expiry | `lease` with holder null, then a black frame | `test_expiry_sends_lease_null_and_a_black_frame` | written |
-| the spec's conformance fixtures | event sequences with the expected reduced state | `contrib/displays/contract/fixtures/` exists but is empty | *in progress on branch `contrib/displays`* |
-| a relay conformance suite and session checker | `relay_conformance.py`, `check_session.py` | announced in `displays-reservation-20260911T0855Z-relay-v0.2.1.md` | *in progress on branch `contrib/displays`* |
+| the spec's conformance fixtures | event sequences with the expected reduced state | `contrib/displays/contract/fixtures/` exists but is empty (checked at 09:10Z: the branch head is still `c931c0f`) | *in progress on branch `contrib/displays`* |
+| a relay conformance suite and session checker | `relay_conformance.py`, `check_session.py` | announced in `displays-reservation-20260911T0855Z-relay-v0.2.1.md`; not landed by 09:10Z (the reservation note on `32042d2` says the same) | *in progress on branch `contrib/displays`* |
 | Clojure generators | grids `[0 1] [257 1] [1 257] [256 256]`; ttl `nil 0 1 900 901 "x"` | `core.cljc`, `lease.cljc` (uncommitted), `test/` | *in progress on branch `contrib/displays-cljc`*; the committed `93edfe5` is the crashed agent's pre-0.2.1 WIP |
 
 **Reproduce.**
@@ -624,7 +634,13 @@ The event promised "a simulator available to test out your concepts on Sunday". 
   3. user B is refused;
   4. at the slot's end the scheduler writes `overdue`, the gatekeeper blanks the display and releases it, and the relay goes idle.
 
-  The session log (2026-09-11T08:47:59Z) records 30 tests with 177 assertions, the gate passing its 26 KAVs, and the integration passing against the pre-0.2.1 mock. A re-run against the v0.2.1 relay is pending.
+  It was re-run against the v0.2.1 relay, `c931c0f`, at reservation commit `32042d2` (2026-09-11; that repo's git log and note):
+  - the integration passes, 24/24 on the relay path;
+  - the relay runs unedited with `--record`, and everything the gatekeeper sent it validates against `contrib/displays/contract/schemas`: `reserve`, `release`, and 46 `pal16` frames, the last one black;
+  - `bb test:bb` gives 31 tests, 190 assertions, 0 failures;
+  - `bin/verify.sh` passes, 26 KAVs.
+
+  The same commit fixed two gaps found by the re-run: a `busy` that was schema-invalid when no booking was live, and malformed control answered `unknown-op` instead of `bad-format`. The JVM cell was not run.
 - **asciinema casts.** [`docs/media/casts/`](media/casts/) holds five recordings with GIFs:
   - the ANSI simulator with the bot;
   - a real REPL session;
@@ -632,7 +648,10 @@ The event promised "a simulator available to test out your concepts on Sunday". 
   - a 30 s KAV-14 replay (226/226 pinned digests);
   - BSD tetris on 9 × 17.
 
-  A Green Building Emacs cast (`contrib/emacs/media/green-building-9x17.cast` and `.gif`, with `record.sh`) is *(in progress on branch `feat/emacs-client`: recorded, not yet committed)*, on the user's request (08:26Z): "can we get an asciienama cast / gif recording of the emacs dispaly with the dimensions for the mit green building and include it in https://github.com/aygp-dr/17x9-Tetris/tree/main/contrib/emacs".
+  The user asked for a Green Building Emacs cast (08:26Z): "can we get an asciienama cast / gif recording of the emacs dispaly with the dimensions for the mit green building and include it in https://github.com/aygp-dr/17x9-Tetris/tree/main/contrib/emacs". It is committed as `ae61317` *(on branch `feat/emacs-client`, not yet on `main`; a re-take is pending to fix the opening frame)*:
+  - `contrib/emacs/media/green-building-9x17.cast` (81 KB) and `.gif` (301 KB, 39 s) show the unpatched overlay display in `emacs -nw` at 9 × 17, with each window 3 columns × 1 line, which is 1.5 : 1, the preset's aspect. The 0.35 masonry gap is not drawn.
+  - The game is a conformance trace, `green-building-game.json`, pinning all 923 frame digests, and the recording checks them: "923/923 digests match the trace, 0 stalls -- PASS".
+  - `record.sh` re-records it. The README section is "Recording: the display at Green Building geometry".
 
 ![The SPEC §8.4 countdown, KAV-01 frames 0 to 90](media/casts/countdown.gif)
 
@@ -660,14 +679,14 @@ cd contrib/displays && python -m demo run tetris -d green-building              
 
 **In flight.**
 - **SPEC v3.** It goes to the first of Clojure, Guile and Elisp whose gate passes against the v3 text (`spec/SEALS.md` on `spec/contract`).
-- **The contract-v1 seal.** The Python server passes; it needs one client, Hy or Emacs, to pass `check.py --session` on a KAV replay.
+- **The contract-v1 seal.** The full gate passed on `spec/contract` at `fb816c1` (09:02Z), with `python` over TCP and `python-ws` over WebSocket. The seal waits only on one client, Hy or Emacs, passing `check.py --session` on a KAV replay; the Emacs workstream is on it.
 - **Merges to `main`**, each by the main session after its checks: `spec/contract`, `impl/python-ws`, `impl/clojure`, `impl/guile`, `impl/hy-client`, `contrib/displays` (v0.2.1), the rest of `feat/emacs-client` and of `docs/media`.
 - **Display work on `contrib/displays` and `contrib/displays-cljc`:**
   - the v0.2.1 conformance fixtures, relay conformance suite and session checker;
   - the Clojure display core and bb relay;
   - the per-preset simulator;
   - the Emacs `pal16` source.
-- **display-reservation.** A re-run against the v0.2.1 relay, and the JVM cell.
+- **display-reservation.** The re-run against the v0.2.1 relay passed (`32042d2`). Still open: the JVM cell, and a non-blocking request that the mock relay flush its `--record` log as it goes (`reservation-displays-20260911T0902Z-record-flush.md`).
 
 ---
 
