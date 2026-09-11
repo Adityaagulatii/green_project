@@ -648,8 +648,8 @@ The event promised "a simulator available to test out your concepts on Sunday". 
   - a 30 s KAV-14 replay (226/226 pinned digests);
   - BSD tetris on 9 × 17.
 
-  The user asked for a Green Building Emacs cast (08:26Z): "can we get an asciienama cast / gif recording of the emacs dispaly with the dimensions for the mit green building and include it in https://github.com/aygp-dr/17x9-Tetris/tree/main/contrib/emacs". It is committed as `ae61317` *(on branch `feat/emacs-client`, not yet on `main`; a re-take is pending to fix the opening frame)*:
-  - `contrib/emacs/media/green-building-9x17.cast` (81 KB) and `.gif` (301 KB, 39 s) show the unpatched overlay display in `emacs -nw` at 9 × 17, with each window 3 columns × 1 line, which is 1.5 : 1, the preset's aspect. The 0.35 masonry gap is not drawn.
+  The user asked for a Green Building Emacs cast (08:26Z): "can we get an asciienama cast / gif recording of the emacs dispaly with the dimensions for the mit green building and include it in https://github.com/aygp-dr/17x9-Tetris/tree/main/contrib/emacs". It is on `main` as `ae61317` plus `a77722e`, the re-take whose first frame is the empty display rather than Emacs's `*scratch*`:
+  - [`contrib/emacs/media/green-building-9x17.cast`](../contrib/emacs/media/green-building-9x17.cast) (77 KB) and [`.gif`](../contrib/emacs/media/green-building-9x17.gif) (254 KB, 39 s) show the unpatched overlay display in `emacs -nw` at 9 × 17, with each window 3 columns × 1 line, which is 1.5 : 1, the preset's aspect. The 0.35 masonry gap is not drawn.
   - The game is a conformance trace, `green-building-game.json`, pinning all 923 frame digests, and the recording checks them: "923/923 digests match the trace, 0 stalls -- PASS".
   - `record.sh` re-records it. The README section is "Recording: the display at Green Building geometry".
 
