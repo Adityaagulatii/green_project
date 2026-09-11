@@ -1,5 +1,6 @@
 """Wire codec for the remote display/control protocol (docs/PROTOCOL.md,
-draft v0): newline-delimited JSON over TCP.
+contract v1). Binding-independent: a message is one JSON object, carried as
+an LF-terminated line (TCP) or as one WebSocket text message.
 
 Pure: encode, decode and validate. ``tetris_sim.server`` does the I/O.
 Decoded frames are returned in the engine's own representation (17 tuples
@@ -13,14 +14,18 @@ from tetris_engine.frame import frame_digest
 from tetris_engine.tables import ACTIONS, COLS, FPS, ROWS
 
 PROTOCOL = "17x9-tetris-remote"
-VERSION = 0
-SPEC_VERSION = 1
-MAX_MESSAGE = 65536           # bytes per message, LF included
+VERSION = 1                   # contract-v1 speaks version 1 (§2)
+SPEC_VERSION = 2              # latest sealed SPEC whose traces the engine passes
+MAX_TEXT = 65535              # bytes of JSON text per message (§1.2)
+MAX_MESSAGE = 65536           # a TCP line, LF included: the hello's max_message
 MAX_TICK = 3600               # frames per tick message (2 minutes)
 MAX_PHASE = 32
 MAX_ID = 64
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 1709
+DEFAULT_PORT = 1709           # TCP, JSON lines (§5.2)
+DEFAULT_WS_PORT = 1710        # WebSocket (§5.3)
+WS_PATH = "/tetris-17x9"
+WS_SUBPROTOCOL = f"tetris-17x9.v{VERSION}"
 
 MODES = ("engine", "display")
 CLOCKS = ("realtime", "lockstep")
@@ -73,10 +78,15 @@ def make_tick(frames=1):
     return {"type": "tick", "frames": frames}
 
 
-def make_frame(frame_no, rows, digest=None):
+def make_frame(frame_no, rows, digest=None, events=None):
+    """``events``: E_k, the (action, down) pairs passed to step k (§4.4);
+    an engine server always sends them, a producer need not."""
     rows = validate_rows(rows)
-    return {"type": "frame", "frame_no": frame_no, "rows": rows,
-            "digest": digest or frame_digest(rows)}
+    msg = {"type": "frame", "frame_no": frame_no, "rows": rows,
+           "digest": digest or frame_digest(rows)}
+    if events is not None:
+        msg["events"] = [[a, bool(d)] for a, d in events]
+    return msg
 
 
 def make_state(score, level, lines, **optional):
@@ -160,6 +170,8 @@ def _hello(msg):
             out[key] = msg[key]
     if msg.get("mode") in MODES:
         out["mode"] = msg["mode"]
+    if msg.get("client_role") in CLIENT_ROLES:
+        out["client_role"] = msg["client_role"]
     if msg.get("clock") in CLOCKS:
         out["clock"] = msg["clock"]
     for key in ("spec_version", "rows", "cols", "fps", "max_message"):
@@ -203,8 +215,20 @@ def _frame(msg):
         if digest != actual:
             raise ProtocolError("digest", "digest does not match rows "
                                 "(SPEC §9.4)")
-    return {"type": "frame", "frame_no": frame_no, "rows": rows,
-            "digest": actual}
+    out = {"type": "frame", "frame_no": frame_no, "rows": rows,
+           "digest": actual}
+    if "events" in msg:
+        out["events"] = _step_events(msg["events"])
+    return out
+
+
+def _step_events(events):
+    if not isinstance(events, list) or not all(
+            isinstance(e, list) and len(e) == 2 and isinstance(e[0], str)
+            and e[0] in ACTIONS and isinstance(e[1], bool) for e in events):
+        raise ProtocolError("bad_frame", "'events' must be a list of "
+                            "[action, down] pairs")
+    return [[a, d] for a, d in events]
 
 
 def _state(msg):
@@ -247,12 +271,16 @@ _VALIDATORS = {"hello": _hello, "event": _event, "tick": _tick,
 
 
 def decode(line):
-    """One line (bytes or str, with or without its LF) -> a validated,
-    normalized message dict. Unknown fields are dropped. Raises
-    ProtocolError, and nothing else, for any bad input."""
+    """One message (bytes or str: a line with or without its LF, or a
+    WebSocket text message) -> a validated, normalized message dict.
+    Unknown fields are dropped. Raises ProtocolError, and nothing else, for
+    any bad input."""
     data = line.encode("utf-8") if isinstance(line, str) else bytes(line)
-    if len(data) > MAX_MESSAGE:
-        raise ProtocolError("too_large", f"{len(data)} bytes > {MAX_MESSAGE}")
+    size = len(data)
+    if data.endswith(b"\n"):      # the line's terminator is not message text
+        size -= 2 if data.endswith(b"\r\n") else 1
+    if size > MAX_TEXT:
+        raise ProtocolError("too_large", f"{size} bytes of JSON > {MAX_TEXT}")
     try:
         text = data.decode("utf-8")
         msg = json.loads(text, parse_constant=_reject_constant,
@@ -270,8 +298,9 @@ def decode(line):
 
 __all__ = [
     "ACTIONS", "CLIENT_ROLES", "CLOCKS", "DEFAULT_HOST", "DEFAULT_PORT",
-    "FATAL", "FPS", "MAX_MESSAGE", "MAX_TICK", "MODES", "PROTOCOL",
-    "ProtocolError", "ROLES", "SPEC_VERSION", "TYPES", "VERSION", "decode",
-    "encode", "make_error", "make_event", "make_frame", "make_hello",
-    "make_ping", "make_pong", "make_state", "make_tick", "validate_rows",
+    "DEFAULT_WS_PORT", "FATAL", "FPS", "MAX_MESSAGE", "MAX_TEXT", "MAX_TICK",
+    "MODES", "PROTOCOL", "ProtocolError", "ROLES", "SPEC_VERSION", "TYPES",
+    "VERSION", "WS_PATH", "WS_SUBPROTOCOL", "decode", "encode", "make_error",
+    "make_event", "make_frame", "make_hello", "make_ping", "make_pong",
+    "make_state", "make_tick", "validate_rows",
 ]
