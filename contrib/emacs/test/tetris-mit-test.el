@@ -441,6 +441,12 @@
             (should (> (file-attribute-size (file-attributes html)) 1000))))
       (delete-file html))))
 
+(defun tetris-mit-test--kav-re (id digests frames verdict)
+  "A regexp for a KAV line: ID, DIGESTS \"n/n\", FRAMES \"n/n\", VERDICT.
+The frame-events clause is there for a v1 server, and absent for v0."
+  (format "%s: %s digests match\\(, %s frame events match\\)? — %s"
+          (regexp-quote id) (regexp-quote digests) (regexp-quote frames) verdict))
+
 (ert-deftest tetris-mit-test-kav-replay-private-server ()
   "Three KAVs replay through a private lockstep server, and pass."
   (tetris-mit-test--with-python
@@ -449,11 +455,15 @@
                       (mapcar #'tetris-mit-test--trace
                               '("07-hard-drop" "08-hold" "13-suspended-input"))
                       nil nil (current-buffer))))
-        (should (equal (mapcar (lambda (r) (plist-get r :line)) results)
-                       '("KAV-07: 121/121 digests match — PASS"
-                         "KAV-08: 131/131 digests match — PASS"
-                         "KAV-13: 431/431 digests match — PASS")))
-        (should (string-match-p "^KAV-08: 131/131 digests match — PASS$"
+        (cl-mapc (lambda (r re) (should (string-match-p (concat "\\`" re "\\'")
+                                                        (plist-get r :line))))
+                 results
+                 (list (tetris-mit-test--kav-re "KAV-07" "121/121" "121/121" "PASS")
+                       (tetris-mit-test--kav-re "KAV-08" "131/131" "131/131" "PASS")
+                       (tetris-mit-test--kav-re "KAV-13" "431/431" "431/431" "PASS")))
+        (should (string-match-p (concat "^" (tetris-mit-test--kav-re
+                                             "KAV-08" "131/131" "131/131" "PASS")
+                                        "$")
                                 (buffer-string)))))))
 
 (ert-deftest tetris-mit-test-kav-replay-existing-server ()
@@ -480,9 +490,11 @@
             (with-temp-file file (insert (json-encode trace)))
             (let ((result (tetris-mit-kav-run file "127.0.0.1" port)))
               (should-not (plist-get result :pass))
-              (should (equal (plist-get result :line)
-                             (format "%s: 120/121 digests match — FAIL"
-                                     (tetris-mit-kav-id file))))))
+              (should (string-match-p
+                       (concat "\\`" (tetris-mit-test--kav-re
+                                      (tetris-mit-kav-id file) "120/121" "121/121" "FAIL")
+                               "\\'")
+                       (plist-get result :line)))))
         (delete-file file)))))
 
 (ert-deftest tetris-mit-test-kav-needs-lockstep ()
@@ -506,10 +518,132 @@
                       "-f" "tetris-mit-kav-batch"
                       (tetris-mit-test--trace "07-hard-drop")
                       (tetris-mit-test--trace "09-line-clear-single"))))
-        (should (equal (list status (buffer-string))
-                       (list 0 (concat "KAV-07: 121/121 digests match — PASS\n"
-                                       "KAV-09: 118/118 digests match — PASS\n"
-                                       "PASS: 2/2 KAVs pass\n"))))))))
+        (should (equal status 0))
+        (should (string-match-p
+                 (concat "\\`"
+                         (tetris-mit-test--kav-re "KAV-07" "121/121" "121/121" "PASS") "\n"
+                         (tetris-mit-test--kav-re "KAV-09" "118/118" "118/118" "PASS") "\n"
+                         "PASS: 2/2 KAVs pass\n\\'")
+                 (buffer-string)))))))
+
+;;;; Contract v1: version, client_role, events
+
+(ert-deftest tetris-mit-test-v1-hello-and-frame-events ()
+  (should (eql (alist-get 'version (tetris-mit-make-hello "viewer")) 1))
+  (should (eql (alist-get 'version (tetris-mit-make-hello "viewer" nil 0)) 0))
+  (dolist (version '(0 1))
+    (should (tetris-mit-decode
+             (format "{\"type\":\"hello\",\"protocol\":\"17x9-tetris-remote\",\"version\":%d,\
+\"role\":\"server\",\"client_role\":\"viewer\"}" version))))
+  (let ((line (lambda (events)
+                (tetris-mit-encode `((type . "frame") (frame_no . 0)
+                                     (rows . ,(tetris-mit-test--rows))
+                                     (events . ,events))))))
+    (should (tetris-mit-decode (funcall line [])))
+    (should (equal (alist-get 'events
+                              (tetris-mit-decode
+                               (funcall line [["left" t] ["left" :json-false]])))
+                   [["left" t] ["left" :json-false]]))
+    (dolist (bad '([["jump" t]] [["left"]] [["left" 1]] ["left"] 5))
+      (should (equal (list bad "bad_frame")
+                     (list bad (tetris-mit-test--error-code
+                                (lambda () (tetris-mit-decode (funcall line bad))))))))))
+
+(ert-deftest tetris-mit-test-step-events ()
+  "E_k from a trace, and from a frame message, in one comparable shape."
+  (should (equal (tetris-mit--trace-step-events
+                  [[0 "left" t] [0 "left" :json-false] [2 "hold" t] [9 "hold" :json-false]] 3)
+                 [(("left" . t) ("left")) nil (("hold" . t))]))
+  (should (equal (tetris-mit--frame-step-events [["left" t] ["left" :json-false]])
+                 '(("left" . t) ("left")))))
+
+(defvar tetris-mit-test--fake-log nil
+  "Messages the fake server received, newest first.")
+
+(defun tetris-mit-test--fake-server (respond)
+  "A fake protocol server on 127.0.0.1, on a free port.
+RESPOND is called with (CONNECTION MESSAGE) for every message received."
+  (setq tetris-mit-test--fake-log nil)
+  (make-network-process
+   :name "tetris-mit-fake" :server t :host "127.0.0.1" :service t :family 'ipv4
+   :noquery t :coding 'utf-8
+   :filter (lambda (proc string)
+             (process-put proc 'pending (concat (process-get proc 'pending) string))
+             (let (newline)
+               (while (setq newline (string-search "\n" (process-get proc 'pending)))
+                 (let* ((pending (process-get proc 'pending))
+                        (msg (tetris-mit--json-parse (substring pending 0 newline))))
+                   (process-put proc 'pending (substring pending (1+ newline)))
+                   (push msg tetris-mit-test--fake-log)
+                   (funcall respond proc msg)))))))
+
+(defun tetris-mit-test--fake-send (proc &rest msgs)
+  "Send MSGS from the fake server's connection PROC."
+  (process-send-string proc (mapconcat #'tetris-mit-encode msgs "")))
+
+(defun tetris-mit-test--server-hello (version &rest fields)
+  "A lockstep engine server's hello in VERSION, with extra FIELDS."
+  `((type . "hello") (protocol . "17x9-tetris-remote") (version . ,version)
+    (role . "server") (mode . "engine") (clock . "lockstep") (seed . 7) ,@fields))
+
+(ert-deftest tetris-mit-test-version-fallback ()
+  "A v0-only server refuses the v1 hello, and the client says hello again in v0.
+The refused attempt never reaches the handler."
+  (let* ((server (tetris-mit-test--fake-server
+                  (lambda (proc msg)
+                    (when (equal (alist-get 'type msg) "hello")
+                      (if (eql (alist-get 'version msg) 0)
+                          (tetris-mit-test--fake-send proc (tetris-mit-test--server-hello 0))
+                        (tetris-mit-test--fake-send
+                         proc '((type . "error") (code . "version")
+                                (message . "expected protocol version 0")))
+                        (delete-process proc))))))
+         (port (process-contact server :service))
+         (got nil)
+         (proc nil))
+    (unwind-protect
+        (progn
+          (setq proc (tetris-mit-open "tetris-mit-fallback" "127.0.0.1" port "viewer"
+                                      (lambda (_p msg) (push msg got))))
+          (should (tetris-mit--wait-until (lambda () got) 10))
+          (should (equal (mapcar (lambda (m) (alist-get 'type m)) got) '("hello")))
+          (should (eql (process-get proc 'tetris-mit-version) 0))
+          (should (equal (tetris-mit-client-role proc) "viewer"))
+          (should (equal (mapcar (lambda (m) (alist-get 'version m))
+                                 (reverse tetris-mit-test--fake-log))
+                         '(1 0))))
+      (when (process-live-p proc) (delete-process proc))
+      (delete-process server))))
+
+(ert-deftest tetris-mit-test-demoted-controller ()
+  "A gatekeeper demotes the controller to a viewer: the client acts on client_role."
+  (let* ((server (tetris-mit-test--fake-server
+                  (lambda (proc msg)
+                    (when (equal (alist-get 'type msg) "hello")
+                      (tetris-mit-test--fake-send
+                       proc (tetris-mit-test--server-hello
+                             1 '(client_role . "viewer")))))))
+         (port (process-contact server :service)))
+    (unwind-protect
+        (progn
+          (let ((buffer (save-window-excursion (tetris-mit-remote "127.0.0.1" port))))
+            (unwind-protect
+                (with-current-buffer buffer
+                  (should (tetris-mit--wait-until (lambda () tetris-mit--server) 10))
+                  (should (equal (tetris-mit-client-role tetris-mit--process) "viewer"))
+                  (should (string-match-p "admitted as viewer" (buffer-string)))
+                  (should-error (tetris-mit-remote-hard-drop) :type 'user-error)
+                  (should-error (tetris-mit-remote-tick 1) :type 'user-error))
+              (kill-buffer buffer)))
+          (let ((result (tetris-mit-lockstep-run "127.0.0.1" port 7 10 [] #'ignore)))
+            (should (string-match-p "admitted the controller as a viewer"
+                                    (plist-get result :error))))
+          (should (equal (delete-dups (mapcar (lambda (m) (alist-get 'type m))
+                                              tetris-mit-test--fake-log))
+                         '("hello")))
+          (should (cl-every (lambda (m) (eql (alist-get 'version m) 1))
+                            tetris-mit-test--fake-log)))
+      (delete-process server))))
 
 (provide 'tetris-mit-test)
 

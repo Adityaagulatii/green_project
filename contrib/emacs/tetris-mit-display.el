@@ -311,7 +311,18 @@ Pushing frames with `tetris-mit-display-show' works as well."
     ("state"
      (setq tetris-mit-display--state msg)
      (tetris-mit-display--update-status))
-    ("hello" (setq tetris-mit-display--server msg))
+    ("hello"
+     (setq tetris-mit-display--server msg)
+     ;; Contract v1 (§2, §9.3): a gatekeeper may have demoted a
+     ;; controller; act on the role the server accepted.
+     (let ((role (alist-get 'client_role msg)))
+       (when (and role (not (equal role tetris-mit-display--role)))
+         (setq tetris-mit-display--role role
+               tetris-mit--process (and (equal role "controller")
+                                        tetris-mit-display--process)
+               tetris-mit-display--note (format "%s, admitted as %s"
+                                                tetris-mit-display--note role))
+         (tetris-mit-display--update-status))))
     ("error"
      (setq tetris-mit-display--last-error msg)
      (message "tetris-mit-display: %s: %s" (alist-get 'code msg)

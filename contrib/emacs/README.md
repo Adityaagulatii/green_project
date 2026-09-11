@@ -1,6 +1,15 @@
 # tetris-mit.el: 17×9 Tetris from Emacs
 
-`tetris-mit.el` plays the 17×9 Tetris of MIT's Green Building facade (153 windows, 17 rows × 9 columns, 30 FPS) from Emacs, and tests it. It speaks the draft remote protocol in [`docs/PROTOCOL.md`](../../docs/PROTOCOL.md): newline-delimited JSON over TCP, on loopback by default.
+`tetris-mit.el` plays the 17×9 Tetris of MIT's Green Building facade (153 windows, 17 rows × 9 columns, 30 FPS) from Emacs, and tests it. It speaks **contract v1** of the remote protocol, [`docs/PROTOCOL.md`](../../docs/PROTOCOL.md) (protocol version 1): newline-delimited JSON over TCP, on loopback by default.
+
+**Contract v1.**
+- **Versions.** A hello offers the versions in `tetris-mit-protocol-versions`, by default `(1 0)`. If a server refuses version 1 with a `version` error before its hello, as the draft-v0 server does, the client reconnects and says hello in version 0. The refused attempt never reaches the mode's handler. A v1 server only ever sees a v1 hello.
+- **`client_role`.** The client acts on the server hello's `client_role`, not on the role it asked for, because an outer gatekeeper may demote a controller to a viewer (PROTOCOL §2, §9.3). `(tetris-mit-client-role PROC)` returns it.
+  - A demoted `tetris-mit-remote` refuses keys and ticks, and its status line says "admitted as viewer: keys are off".
+  - A demoted display controller stops playing.
+  - A KAV replay fails with "the server admitted the controller as a viewer", without sending any events.
+  - The local mirror stops unless it was admitted as a producer.
+- **`events`.** A frame's `events` (E_k) are validated when present. The KAV driver compares each frame's E_k with the trace, and reports it as `KAV-NN: n/n digests match, f/f frame events match — PASS`. With a v0 server, which sends no events, only the digests are compared.
 
 | Command | What it is | SPEC v1? |
 |---|---|---|

@@ -33,8 +33,12 @@
 ;;                      its board to a display server.  The rules are
 ;;                      tetris.el's, not SPEC v1.
 ;;
-;; The wire protocol is docs/PROTOCOL.md (draft v0): newline-delimited
-;; JSON over TCP, on loopback by default.  See contrib/emacs/README.md.
+;; The wire protocol is docs/PROTOCOL.md, contract v1 (protocol version
+;; 1): newline-delimited JSON over TCP, on loopback by default.  A hello
+;; offers version 1 and falls back to 0 when a draft-v0 server refuses
+;; it.  The client acts on the server hello's `client_role' (a gatekeeper
+;; may demote a controller), and the KAV driver compares each engine
+;; frame's `events' with the trace.  See contrib/emacs/README.md.
 
 ;;; Code:
 
@@ -122,7 +126,22 @@ is unchanged; see docs/PROTOCOL.md."
 (defconst tetris-mit-cols 9 "Display columns (SPEC §2.1).")
 (defconst tetris-mit-fps 30 "Frames per second (SPEC §2.3).")
 (defconst tetris-mit-protocol "17x9-tetris-remote" "Protocol name.")
-(defconst tetris-mit-protocol-version 0 "Protocol version (draft).")
+(defconst tetris-mit-protocol-version 1 "Protocol version: contract v1.")
+
+(defcustom tetris-mit-protocol-versions '(1 0)
+  "Protocol versions a hello offers, most preferred first.
+A connection says hello with the first.  If the server refuses it
+with a `version' error before its own hello, the connection is opened
+again with the next.  Contract v1 servers speak 1 only, and the draft
+v0 server speaks 0 only, so with the default both work, and a v1
+server never sees a v0 hello."
+  :type '(repeat natnum))
+
+(defcustom tetris-mit-hello-timeout 5
+  "Seconds to wait for the server's first message, to settle the version.
+Only a hello that has a fallback in `tetris-mit-protocol-versions'
+waits."
+  :type 'number)
 (defconst tetris-mit-max-message 65536
   "Largest protocol message in bytes, including its newline.")
 (defconst tetris-mit-max-tick 3600 "Largest `frames' of one tick message.")
@@ -161,14 +180,15 @@ The message is made from FORMAT-STRING and ARGS."
   (signal 'tetris-mit-protocol-error
           (list code (apply #'format-message format-string args))))
 
-(defun tetris-mit-make-hello (role &optional fields)
+(defun tetris-mit-make-hello (role &optional fields version)
   "A hello message for ROLE: \"controller\", \"viewer\" or \"producer\".
 FIELDS is an alist of extra fields, such as ((seed . 42)).  A field
 that is already present, such as `client', is replaced rather than
-repeated, because the server rejects duplicate keys."
+repeated, because the server rejects duplicate keys.  VERSION is the
+protocol version, by default the first of `tetris-mit-protocol-versions'."
   (let ((msg (list (cons 'type "hello") (cons 'protocol tetris-mit-protocol)
-                   (cons 'version tetris-mit-protocol-version) (cons 'role role)
-                   (cons 'client "tetris-mit.el"))))
+                   (cons 'version (or version (car tetris-mit-protocol-versions)))
+                   (cons 'role role) (cons 'client "tetris-mit.el"))))
     (dolist (field fields msg)
       (let ((cell (assq (car field) msg)))
         (if cell
@@ -258,7 +278,21 @@ A frame is 17 vectors of 9 [R G B] vectors of integers in 0..255."
        "bad_frame" "a frame is 17 rows of 9 [r, g, b] integers in 0..255"))
     (when (and digest tetris-mit-verify-digests
                (not (equal digest (tetris-mit-frame-digest rows))))
-      (tetris-mit--protocol-error "digest" "digest does not match rows"))))
+      (tetris-mit--protocol-error "digest" "digest does not match rows"))
+    (unless (tetris-mit--valid-step-events-p (alist-get 'events msg))
+      (tetris-mit--protocol-error
+       "bad_frame" "events must be an array of [action, down] pairs"))))
+
+(defun tetris-mit--valid-step-events-p (events)
+  "Non-nil if EVENTS is absent (nil) or a frame's valid `events' (E_k).
+That is a vector of [ACTION DOWN] pairs, with SPEC actions and booleans."
+  (or (null events)
+      (and (vectorp events)
+           (cl-every (lambda (e)
+                       (and (vectorp e) (= (length e) 2)
+                            (member (aref e 0) tetris-mit-actions)
+                            (memq (aref e 1) '(t :json-false))))
+                     events))))
 
 (defun tetris-mit-decode (line)
   "Decode LINE, one protocol message, into an alist with symbol keys.
@@ -292,15 +326,68 @@ its digest must also match."
          (tetris-mit--protocol-error "bad_event" "down must be true or false")))
       ("hello"
        (unless (and (equal (alist-get 'protocol msg) tetris-mit-protocol)
-                    (eql (alist-get 'version msg) tetris-mit-protocol-version))
-         (tetris-mit--protocol-error "version" "expected %s version %d"
+                    (integerp (alist-get 'version msg))
+                    (memql (alist-get 'version msg) tetris-mit-protocol-versions))
+         (tetris-mit--protocol-error "version" "expected %s version %s"
                                      tetris-mit-protocol
-                                     tetris-mit-protocol-version)))
+                                     (mapconcat #'number-to-string
+                                                tetris-mit-protocol-versions
+                                                " or "))))
       ((or "tick" "ping" "pong" "error") nil)
       (type (tetris-mit--protocol-error "unknown_type" "unknown type %S" type)))
     msg))
 
 ;;;; Connections
+
+(defun tetris-mit--connect (name host port role hello-fields version)
+  "Open NAME to HOST:PORT and say hello as ROLE in protocol VERSION.
+Messages are held in the process's queue until `tetris-mit--release'."
+  (let ((proc (open-network-stream name nil host port
+                                   :type 'plain :coding 'utf-8)))
+    (set-process-query-on-exit-flag proc nil)
+    (process-put proc 'tetris-mit-pending "")
+    (process-put proc 'tetris-mit-held t)
+    (process-put proc 'tetris-mit-queue nil)
+    (process-put proc 'tetris-mit-role role)
+    (process-put proc 'tetris-mit-version version)
+    (set-process-filter proc #'tetris-mit--filter)
+    (set-process-sentinel proc #'tetris-mit--sentinel)
+    (tetris-mit-send proc (tetris-mit-make-hello role hello-fields version))
+    proc))
+
+(defun tetris-mit--version-refused-p (proc)
+  "Non-nil if the server refuses PROC's hello with a `version' error.
+Wait up to `tetris-mit-hello-timeout' seconds for its first message."
+  (tetris-mit--wait-until (lambda () (or (process-get proc 'tetris-mit-queue)
+                                         (not (process-live-p proc))))
+                          tetris-mit-hello-timeout)
+  (let ((first (car (process-get proc 'tetris-mit-queue))))
+    (and (equal (alist-get 'type first) "error")
+         (equal (alist-get 'code first) "version")
+         (not (alist-get 'local first)))))
+
+(defun tetris-mit--handle (proc msg)
+  "Pass MSG to PROC's handler, noting the role a server hello accepted."
+  (when (equal (alist-get 'type msg) "hello")
+    ;; Contract v1: act on client_role, not on the role asked for (§2).
+    (process-put proc 'tetris-mit-client-role
+                 (or (alist-get 'client_role msg) (process-get proc 'tetris-mit-role))))
+  (funcall (process-get proc 'tetris-mit-handler) proc msg))
+
+(defun tetris-mit--dispatch (proc msg)
+  "Hold MSG in PROC's queue, or pass it on once PROC is released."
+  (if (process-get proc 'tetris-mit-held)
+      (process-put proc 'tetris-mit-queue
+                   (nconc (process-get proc 'tetris-mit-queue) (list msg)))
+    (tetris-mit--handle proc msg)))
+
+(defun tetris-mit--release (proc)
+  "Pass PROC's held messages to its handler, in order, then stop holding."
+  (let (queue)
+    (while (setq queue (process-get proc 'tetris-mit-queue))
+      (process-put proc 'tetris-mit-queue (cdr queue))
+      (tetris-mit--handle proc (car queue))))
+  (process-put proc 'tetris-mit-held nil))
 
 (defun tetris-mit-open (name host port role handler &optional hello-fields)
   "Connect to the protocol server at HOST:PORT as ROLE, and say hello.
@@ -308,16 +395,41 @@ NAME names the network process.  HELLO-FIELDS is an alist of extra
 hello fields.  Each decoded message is passed to HANDLER as
 \(HANDLER PROCESS MESSAGE).  A message that fails to decode arrives
 as an error message with (local . t).  When the connection closes,
-HANDLER gets a message of type \"closed\".  Return the process."
-  (let ((proc (open-network-stream name nil host port
-                                   :type 'plain :coding 'utf-8)))
-    (set-process-query-on-exit-flag proc nil)
+HANDLER gets a message of type \"closed\".  Return the process.
+
+The hello offers the versions of `tetris-mit-protocol-versions' in
+order.  If the server refuses one with a `version' error before its
+own hello, the connection is opened again with the next version; the
+refused attempt never reaches HANDLER.  The process property
+`tetris-mit-version' is the version spoken.  `tetris-mit-client-role'
+returns the role the server accepted, which a gatekeeper may have
+demoted (contract v1, §2 and §9.3).  Messages that arrive while the
+version is settled reach HANDLER from a timer, after this function
+has returned, so that the caller can store the process first."
+  (let ((versions tetris-mit-protocol-versions) proc)
+    (while (progn
+             (setq proc (tetris-mit--connect name host port role hello-fields
+                                             (pop versions)))
+             (and versions (tetris-mit--version-refused-p proc)))
+      (delete-process proc))
     (process-put proc 'tetris-mit-handler handler)
-    (process-put proc 'tetris-mit-pending "")
-    (set-process-filter proc #'tetris-mit--filter)
-    (set-process-sentinel proc #'tetris-mit--sentinel)
-    (tetris-mit-send proc (tetris-mit-make-hello role hello-fields))
+    (if (process-get proc 'tetris-mit-queue)
+        (run-at-time 0 nil #'tetris-mit--release proc)
+      (process-put proc 'tetris-mit-held nil))
     proc))
+
+(defun tetris-mit-client-role (proc)
+  "The role the server accepted for PROC, from its hello's `client_role'.
+It is nil before the server's hello.  A v0 server sends no
+`client_role'; the role asked for is then assumed."
+  (process-get proc 'tetris-mit-client-role))
+
+(defun tetris-mit--check-controller (proc)
+  "Signal a `user-error' if the server admitted PROC as anything but a controller."
+  (let ((role (and proc (tetris-mit-client-role proc))))
+    (when (and role (not (equal role "controller")))
+      (user-error "tetris-mit: the server admitted this connection as a %s, \
+so it cannot play" role))))
 
 (defun tetris-mit-gatekeeper-token ()
   "The token from `tetris-mit-gatekeeper-token-source', or nil."
@@ -345,12 +457,12 @@ IDENTITY.  Otherwise, or when it returns nil, return HOST:PORT."
 (defun tetris-mit--deliver (proc line)
   "Decode LINE from PROC and pass it to PROC's handler."
   (unless (string-blank-p line)
-    (let ((handler (process-get proc 'tetris-mit-handler)))
-      (condition-case err
-          (funcall handler proc (tetris-mit-decode line))
-        (tetris-mit-protocol-error
-         (funcall handler proc `((type . "error") (code . ,(nth 1 err))
-                                 (message . ,(nth 2 err)) (local . t))))))))
+    (let ((msg (condition-case err
+                   (tetris-mit-decode line)
+                 (tetris-mit-protocol-error
+                  `((type . "error") (code . ,(nth 1 err))
+                    (message . ,(nth 2 err)) (local . t))))))
+      (tetris-mit--dispatch proc msg))))
 
 (defun tetris-mit--filter (proc chunk)
   "Split the output CHUNK of PROC into lines and deliver each one."
@@ -363,16 +475,14 @@ IDENTITY.  Otherwise, or when it returns nil, return HOST:PORT."
     (let ((rest (substring data start)))
       (if (<= (string-bytes rest) tetris-mit-max-message)
           (process-put proc 'tetris-mit-pending rest)
-        (funcall (process-get proc 'tetris-mit-handler) proc
-                 '((type . "error") (code . "too_large") (local . t)
-                   (message . "message over 65536 bytes")))
+        (tetris-mit--dispatch proc '((type . "error") (code . "too_large") (local . t)
+                                     (message . "message over 65536 bytes")))
         (delete-process proc)))))
 
 (defun tetris-mit--sentinel (proc event)
   "Tell PROC's handler that the connection closed, with EVENT."
   (unless (process-live-p proc)
-    (funcall (process-get proc 'tetris-mit-handler) proc
-             `((type . "closed") (message . ,(string-trim event))))))
+    (tetris-mit--dispatch proc `((type . "closed") (message . ,(string-trim event))))))
 
 (defun tetris-mit--wait-until (predicate timeout)
   "Process input until PREDICATE returns non-nil, or TIMEOUT seconds pass.
@@ -512,7 +622,9 @@ Emacs cannot see key releases, so every key is a tap (PROTOCOL.md §4.4)."
   (list (tetris-mit-make-event action t) (tetris-mit-make-event action nil)))
 
 (defun tetris-mit-remote-tap (action)
-  "Send ACTION to the engine as a key tap: a press, then a release."
+  "Send ACTION to the engine as a key tap: a press, then a release.
+Refuse if the server admitted this connection as a viewer."
+  (tetris-mit--check-controller tetris-mit--process)
   (apply #'tetris-mit-send tetris-mit--process (tetris-mit-action-events action)))
 
 (defmacro tetris-mit--define-action-commands ()
@@ -598,11 +710,16 @@ sends keys as SPEC actions.
     ("hello"
      (setq tetris-mit--server msg)
      (setq tetris-mit--note
-           (if (equal (alist-get 'mode msg) "engine")
-               (format "%s clock, seed %s" (alist-get 'clock msg)
-                       (alist-get 'seed msg))
-             (format "server is in %s mode; use --mode engine"
-                     (alist-get 'mode msg))))
+           (cond ((not (equal (alist-get 'mode msg) "engine"))
+                  (format "server is in %s mode; use --mode engine"
+                          (alist-get 'mode msg)))
+                 ;; Contract v1: a gatekeeper may demote the controller.
+                 ((not (member (alist-get 'client_role msg) '(nil "controller")))
+                  (format "admitted as %s: keys are off; %s clock, seed %s"
+                          (alist-get 'client_role msg) (alist-get 'clock msg)
+                          (alist-get 'seed msg)))
+                 (t (format "%s clock, seed %s" (alist-get 'clock msg)
+                            (alist-get 'seed msg)))))
      (tetris-mit--remote-redraw))
     ("frame"
      (setq tetris-mit--rows (alist-get 'rows msg)
@@ -683,6 +800,7 @@ PORT.  Otherwise use `tetris-mit-host' and `tetris-mit-port'.
 (defun tetris-mit-remote-tick (frames)
   "Advance a lockstep engine server by FRAMES frames (the prefix argument)."
   (interactive "p" tetris-mit-remote-mode)
+  (tetris-mit--check-controller tetris-mit--process)
   (tetris-mit-send tetris-mit--process (tetris-mit-make-tick frames)))
 
 ;;;; Known-answer vectors: the test driver
@@ -730,6 +848,24 @@ events of frame k are sent just before the tick that runs frame k."
 (defun tetris-mit--event-down-p (value)
   "Non-nil if VALUE, from a trace or from Lisp, means a press."
   (and value (not (eq value :json-false))))
+
+(defun tetris-mit--trace-step-events (events frames)
+  "E_k of a trace, for each frame k below FRAMES, as a vector of lists.
+EVENTS is the trace's vector of [FRAME ACTION DOWN].  Each E_k is a
+list of (ACTION . DOWN), in trace order, with DOWN t or nil."
+  (let ((steps (make-vector frames nil)))
+    (cl-loop for e across events
+             for k = (aref e 0)
+             when (< k frames)
+             do (push (cons (aref e 1) (tetris-mit--event-down-p (aref e 2)))
+                      (aref steps k)))
+    (dotimes (k frames) (aset steps k (nreverse (aref steps k))))
+    steps))
+
+(defun tetris-mit--frame-step-events (events)
+  "A frame message's EVENTS, [[ACTION DOWN] ...], as a list of (ACTION . DOWN)."
+  (mapcar (lambda (e) (cons (aref e 0) (tetris-mit--event-down-p (aref e 1))))
+          events))
 
 (cl-defun tetris-mit-lockstep-run (host port seed frames events on-frame
                                         &key on-state progress
@@ -780,6 +916,11 @@ time.  Return a plist (:received N :error MESSAGE-OR-NIL :hello HELLO)."
           (cond
            ((not hello)
             (setq failure (or failure "no hello from the server")))
+           ;; Contract v1 (§2): act on client_role; a gatekeeper may have
+           ;; demoted the controller, and a viewer must not send events.
+           ((not (member (alist-get 'client_role hello) '(nil "controller")))
+            (setq failure (format "the server admitted the controller as a %s"
+                                  (alist-get 'client_role hello))))
            ((not (equal (alist-get 'clock hello) "lockstep"))
             (setq failure (format "server clock is %s; replay needs --clock lockstep"
                                   (alist-get 'clock hello))))
@@ -852,7 +993,10 @@ Return a plist (:id :file :matched :total :pass :error :line).
          (frames (alist-get 'frames trace))
          (every (alist-get 'digest_every trace))
          (expected (append (alist-get 'digests trace) nil))
+         (steps (tetris-mit--trace-step-events (alist-get 'events trace) frames))
          (got (make-vector frames nil))
+         (events-seen 0)
+         (events-matched 0)
          (last-rows nil)
          (failure nil))
     (tetris-mit--kav-log
@@ -864,8 +1008,16 @@ Return a plist (:id :file :matched :total :pass :error :line).
            (tetris-mit-lockstep-run
             host port seed frames (alist-get 'events trace)
             (lambda (msg)
-              (let ((rows (alist-get 'rows msg)))
-                (aset got (alist-get 'frame_no msg) (tetris-mit-frame-digest rows))
+              (let ((rows (alist-get 'rows msg))
+                    (k (alist-get 'frame_no msg))
+                    (events (alist-get 'events msg)))
+                (aset got k (tetris-mit-frame-digest rows))
+                ;; Contract v1: an engine frame carries E_k, the events the
+                ;; server passed to step k.  Compare them with the trace's.
+                (when events
+                  (setq events-seen (1+ events-seen))
+                  (when (equal (tetris-mit--frame-step-events events) (aref steps k))
+                    (setq events-matched (1+ events-matched))))
                 (setq last-rows rows)))
             :name (concat "tetris-mit-" id)
             :progress (lambda (received total)
@@ -876,9 +1028,15 @@ Return a plist (:id :file :matched :total :pass :error :line).
                             collect (aref got k)))
            (total (length expected))
            (matched (cl-loop for a in actual for e in expected count (equal a e)))
-           (pass (and (not failure) (= matched total) (= (length actual) total)))
-           (line (format "%s: %d/%d digests match — %s"
-                         id matched total (if pass "PASS" "FAIL"))))
+           ;; A v0 server sends no events: then only the digests are checked.
+           (events-ok (or (zerop events-seen) (= events-matched frames)))
+           (pass (and (not failure) (= matched total) (= (length actual) total)
+                      events-ok))
+           (line (format "%s: %d/%d digests match%s — %s"
+                         id matched total
+                         (if (zerop events-seen) ""
+                           (format ", %d/%d frame events match" events-matched frames))
+                         (if pass "PASS" "FAIL"))))
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (let ((inhibit-read-only t))
@@ -1134,9 +1292,14 @@ They default to `tetris-mit-display-host' and `tetris-mit-display-port'."
   (pcase (alist-get 'type msg)
     ("hello"
      (setq tetris-mit--mirror-server msg)
-     (unless (equal (alist-get 'mode msg) "display")
-       (message "tetris-mit: the mirror target is in %s mode, not display"
-                (alist-get 'mode msg))))
+     (cond ((not (equal (alist-get 'mode msg) "display"))
+            (message "tetris-mit: the mirror target is in %s mode, not display"
+                     (alist-get 'mode msg)))
+           ;; Contract v1 (§2): only a producer may send frames.
+           ((not (member (alist-get 'client_role msg) '(nil "producer")))
+            (message "tetris-mit: the display server admitted the mirror as a %s; \
+not mirroring" (alist-get 'client_role msg))
+            (tetris-mit-local-mirror-stop))))
     ("error"
      (push msg tetris-mit--mirror-errors)
      (message "tetris-mit mirror: %s: %s" (alist-get 'code msg)
