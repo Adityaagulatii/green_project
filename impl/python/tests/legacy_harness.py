@@ -265,7 +265,7 @@ def legacy_visible(sent):
     """Legacy sends for one logical frame, minus the post-game-over black
     frame that is superseded in the same slot (QUIRK-10)."""
     out = []
-    for i, (codes, is_glyph) in enumerate(sent):
+    for i, (codes, _is_glyph) in enumerate(sent):
         prev_glyph = i > 0 and sent[i - 1][1]
         if codes == BLACK and prev_glyph and i + 1 < len(sent):
             continue

@@ -4,9 +4,22 @@ No numpy, pygame, clock or I/O in the core: ``new_game(seed)`` ->
 ``step(state, events)`` -> ``render(state)``.
 """
 
-from .core import (CLEARING, COUNTDOWN, GAMEOVER, PHASES, PLAYING, Held,
-                   Piece, State, apply_action, collides, gravity_increment,
-                   level_target, new_game, step)
+from .core import (
+                   CLEARING,
+                   COUNTDOWN,
+                   GAMEOVER,
+                   PHASES,
+                   PLAYING,
+                   Held,
+                   Piece,
+                   State,
+                   apply_action,
+                   collides,
+                   gravity_increment,
+                   level_target,
+                   new_game,
+                   step,
+)
 from .frame import codes_digest, frame_digest, render, render_codes
 from .tables import ACTIONS, COLS, FPS, PALETTE, ROWS
 
