@@ -59,6 +59,8 @@ PROTOCOL_MUTANTS="digest-flip repaint phase-alias illegal-edge drop-state stamp-
 server() {
     case $1 in
         python) echo "tcp://127.0.0.1:{port} env PYTHONPATH=$ROOT/impl/python/engine:$ROOT/impl/python/sim $PY -m tetris_sim.server --mode engine --clock lockstep --port {port}" ;;
+        # list python before python-ws in SERVERS: protocol_selftest proxies only the first
+        python-ws) echo "ws://127.0.0.1:{port}/tetris-17x9 env PYTHONPATH=$ROOT/impl/python/engine:$ROOT/impl/python/sim $PY -m tetris_sim.server --mode engine --clock lockstep --transport ws --port {port}" ;;
         *) echo "unknown server $1" >&2; return 1 ;;
     esac
 }
