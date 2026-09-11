@@ -4,6 +4,7 @@ Tetris on MIT's Green Building, whose facade has **153 lit windows**: a 17×9 di
 
 - **[SPEC.md](SPEC.md).** The canonical, versioned spec. Everything else defers to it.
 - **[docs/POLYGLOT-PLAN.md](docs/POLYGLOT-PLAN.md).** The rebuild plan, the seal protocol and the methodology.
+- **[docs/PROCESS.md](docs/PROCESS.md).** How the project was done, stage by stage, with the commits, experiments and media behind each step.
 - **[docs/events/2026-09-13-sundai-hack-140.md](docs/events/2026-09-13-sundai-hack-140.md).** The hack brief and our notes on it.
 - **[spec/conformance/](spec/conformance/README.md).** The trace format, the runner and the driver protocol.
 - **[spec/SEALS.md](spec/SEALS.md).** One line per sealed spec version.
