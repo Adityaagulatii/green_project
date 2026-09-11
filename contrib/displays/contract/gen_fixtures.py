@@ -231,8 +231,28 @@ def expiry_fixtures():
         early = events[:4] + [{"event": "tick", "now": 1000}] + events[5:]
         cases.append(fold_case(f"{name} {fmt}: a tick at expires, before the relay's lease",
                                dc.initial_state(name), early))
+    short = [{"event": "open"}, caps_of(GB),
+             {"op": "lease", "display": GB, "holder": "src@lab", "expires": 1000},
+             frame(pattern(9, 17)), {"op": "lease", "holder": None},
+             frame(dc.black_frame(9, 17, "pal16"))]
+    cases.append(fold_case(f"{GB} pal16: the Rules' short expiry message", dc.initial_state(GB),
+                           short, note="the Rules write {op: lease, holder: null}; the Viewer "
+                                       "section adds display and expires; both fold alike"))
     return {"description": "The lease expiry sequence as a viewer folds it, one state per "
                            "event.", "cases": cases}
+
+
+def relay_answer(m, errs):
+    """The error a relay answers when a client sends M, as JSON text, with no lease.
+    Text that does not start with { is not control: by the first-character
+    rule it is a hex frame, and from a non-holder that is not-holder."""
+    if not json.dumps(m).startswith("{"):
+        return "not-holder"
+    if not isinstance(m.get("op"), str):
+        return "bad-format"
+    if m["op"] not in dc.TO_RELAY:
+        return "unknown-op"
+    return "bad-format" if errs else None
 
 
 # ------------------------------------------------------------------ the fold
@@ -446,9 +466,7 @@ def message_fixtures():
         c = {"message": m, "valid": not errs}
         if isinstance(m, dict) and m.get("op") in dc.TO_RELAY + ("dance",) or not isinstance(
                 m, dict) or not isinstance(m.get("op"), str):
-            c["relay"] = (None if not errs else "unknown-op"
-                          if isinstance(m, dict) and isinstance(m.get("op"), str)
-                          and m["op"] not in dc.TO_RELAY else "bad-format")
+            c["relay"] = relay_answer(m, errs)
         cases.append(c)
     raw = [("{oops", "bad-format"), ("{}", "bad-format"), ('{"op":"caps"}', "unknown-op"),
            ('{"op":"granted"}', "unknown-op")]
