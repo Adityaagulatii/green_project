@@ -95,6 +95,29 @@ a tunnel such as \"ssh -L\" to reach one on another machine."
 Two spaces look roughly square in most fonts."
   :type 'string)
 
+(defcustom tetris-mit-gatekeeper-endpoint nil
+  "Endpoint of an OUTER reservation gatekeeper, or nil.
+This package never interprets it.  It only passes the value to
+`tetris-mit-gatekeeper-function'.  The reservation system is a
+separate project, and this package contains no reservation logic."
+  :type '(choice (const :tag "None" nil) string))
+
+(defcustom tetris-mit-gatekeeper-token-source nil
+  "Where the gatekeeper's token comes from.
+The value is nil, a string, or a function of no arguments that returns
+a string.  It is only read when `tetris-mit-gatekeeper-function' is set."
+  :type '(choice (const :tag "None" nil) string function))
+
+(defcustom tetris-mit-gatekeeper-function nil
+  "Hook for an OUTER reservation gatekeeper that fronts servers, or nil.
+When non-nil, it is called before live connections: remote play, the
+display and the local mirror.  It gets one plist argument with the keys
+:endpoint, :token, :host, :port, :role and :identity (the display
+identity alist, or nil).  It returns (HOST . PORT) to connect to, such
+as the gatekeeper's proxy, or nil to connect directly.  The protocol
+is unchanged; see docs/PROTOCOL.md."
+  :type '(choice (const :tag "Direct connections" nil) function))
+
 (defconst tetris-mit-rows 17 "Display rows (SPEC §2.1).")
 (defconst tetris-mit-cols 9 "Display columns (SPEC §2.1).")
 (defconst tetris-mit-fps 30 "Frames per second (SPEC §2.3).")
@@ -140,11 +163,17 @@ The message is made from FORMAT-STRING and ARGS."
 
 (defun tetris-mit-make-hello (role &optional fields)
   "A hello message for ROLE: \"controller\", \"viewer\" or \"producer\".
-FIELDS is an alist of extra fields, such as ((seed . 42))."
-  (append `((type . "hello") (protocol . ,tetris-mit-protocol)
-            (version . ,tetris-mit-protocol-version) (role . ,role)
-            (client . "tetris-mit.el"))
-          fields))
+FIELDS is an alist of extra fields, such as ((seed . 42)).  A field
+that is already present, such as `client', is replaced rather than
+repeated, because the server rejects duplicate keys."
+  (let ((msg (list (cons 'type "hello") (cons 'protocol tetris-mit-protocol)
+                   (cons 'version tetris-mit-protocol-version) (cons 'role role)
+                   (cons 'client "tetris-mit.el"))))
+    (dolist (field fields msg)
+      (let ((cell (assq (car field) msg)))
+        (if cell
+            (setcdr cell (cdr field))
+          (setq msg (append msg (list (cons (car field) (cdr field))))))))))
 
 (defun tetris-mit-make-event (action down)
   "An event message: press ACTION if DOWN is non-nil, else release it."
@@ -290,6 +319,23 @@ HANDLER gets a message of type \"closed\".  Return the process."
     (tetris-mit-send proc (tetris-mit-make-hello role hello-fields))
     proc))
 
+(defun tetris-mit-gatekeeper-token ()
+  "The token from `tetris-mit-gatekeeper-token-source', or nil."
+  (let ((source tetris-mit-gatekeeper-token-source))
+    (cond ((functionp source) (funcall source))
+          ((stringp source) source))))
+
+(defun tetris-mit-resolve-endpoint (host port role &optional identity)
+  "Where to connect for HOST:PORT as ROLE: (HOST . PORT).
+Ask `tetris-mit-gatekeeper-function', if it is set, and pass it
+IDENTITY.  Otherwise, or when it returns nil, return HOST:PORT."
+  (or (and tetris-mit-gatekeeper-function
+           (funcall tetris-mit-gatekeeper-function
+                    (list :endpoint tetris-mit-gatekeeper-endpoint
+                          :token (tetris-mit-gatekeeper-token)
+                          :host host :port port :role role :identity identity)))
+      (cons host port)))
+
 (defun tetris-mit-send (proc &rest msgs)
   "Send MSGS to the network process PROC as protocol lines, in one write."
   (unless (process-live-p proc)
@@ -381,6 +427,9 @@ until the server listens, and return (PROCESS . PORT)."
       (signal-process proc 'SIGTERM)
       (tetris-mit--wait-until (lambda () (not (process-live-p proc))) 10)
       (when (process-live-p proc) (delete-process proc)))
+    ;; A process can be dead before Emacs has read the last of its
+    ;; output; waiting on it reads what is left in the pipe.
+    (accept-process-output proc 0.1)
     (let* ((buffer (process-buffer proc))
            (output (and (buffer-live-p buffer)
                         (with-current-buffer buffer (buffer-string)))))
@@ -599,12 +648,14 @@ PORT.  Otherwise use `tetris-mit-host' and `tetris-mit-port'.
       (setq tetris-mit--host host
             tetris-mit--port port)
       (setq tetris-mit--process
-            (tetris-mit-open "tetris-mit-remote" host port "controller"
-                             (lambda (proc msg)
-                               (when (buffer-live-p buffer)
-                                 (with-current-buffer buffer
-                                   (when (eq proc tetris-mit--process)
-                                     (tetris-mit--remote-receive msg)))))))
+            (let ((target (tetris-mit-resolve-endpoint host port "controller")))
+              (tetris-mit-open "tetris-mit-remote" (car target) (cdr target)
+                               "controller"
+                               (lambda (proc msg)
+                                 (when (buffer-live-p buffer)
+                                   (with-current-buffer buffer
+                                     (when (eq proc tetris-mit--process)
+                                       (tetris-mit--remote-receive msg))))))))
       (setq tetris-mit--note "connecting")
       (tetris-mit--remote-redraw))
     (pop-to-buffer-same-window buffer)
@@ -676,6 +727,92 @@ events of frame k are sent just before the tick that runs frame k."
           (setq k (+ k ticks)))))
     (nreverse steps)))
 
+(defun tetris-mit--event-down-p (value)
+  "Non-nil if VALUE, from a trace or from Lisp, means a press."
+  (and value (not (eq value :json-false))))
+
+(cl-defun tetris-mit-lockstep-run (host port seed frames events on-frame
+                                        &key on-state progress
+                                        (name "tetris-mit-lockstep"))
+  "Play EVENTS for FRAMES frames from SEED on the lockstep server HOST:PORT.
+Connect as the controller, with SEED in the hello.  EVENTS is a vector
+of [FRAME ACTION DOWN] entries sorted by frame, as in a conformance
+trace; DOWN is t, :json-false or nil.  The events of frame k are sent
+just before the tick that runs frame k.  Call ON-FRAME with each frame
+message, in order, and ON-STATE, if non-nil, with each state message.
+PROGRESS, if non-nil, is called with (RECEIVED FRAMES) from time to
+time.  Return a plist (:received N :error MESSAGE-OR-NIL :hello HELLO)."
+  (let* ((received 0) (hello nil) (failure nil) (proc nil) (finished nil)
+         (tries 0)
+         (handler
+          (lambda (p msg)
+            (when (eq p proc)
+              (pcase (alist-get 'type msg)
+                ("hello" (setq hello msg))
+                ("frame"
+                 (let ((k (alist-get 'frame_no msg)))
+                   (if (not (eql k received))
+                       (setq failure (format "frame_no %s, expected %d" k received))
+                     (setq received (1+ received))
+                     (condition-case err
+                         (funcall on-frame msg)
+                       (error (setq failure (format "on-frame: %s"
+                                                    (error-message-string err))))))))
+                ("state" (when on-state (funcall on-state msg)))
+                ("error"
+                 (setq failure (format "%s: %s" (alist-get 'code msg)
+                                       (alist-get 'message msg))))
+                ("closed"
+                 (unless finished
+                   (setq failure (or failure "connection closed")))))))))
+    (unwind-protect
+        (progn
+          ;; The previous session may still be closing on the server.
+          (while (progn
+                   (setq hello nil failure nil)
+                   (setq proc (tetris-mit-open name host port "controller" handler
+                                               `((seed . ,seed))))
+                   (tetris-mit--wait-until (lambda () (or hello failure)) 10)
+                   (and (not hello) failure (string-prefix-p "busy" failure)
+                        (< (cl-incf tries) 50)))
+            (delete-process proc)
+            (sleep-for 0.05))
+          (cond
+           ((not hello)
+            (setq failure (or failure "no hello from the server")))
+           ((not (equal (alist-get 'clock hello) "lockstep"))
+            (setq failure (format "server clock is %s; replay needs --clock lockstep"
+                                  (alist-get 'clock hello))))
+           ((not (eql (alist-get 'seed hello) seed))
+            (setq failure (format "the server did not take seed %d" seed)))
+           (t
+            (let ((sent 0) (shown 0))
+              (catch 'stop
+                (dolist (step (tetris-mit--kav-schedule events frames))
+                  (tetris-mit--wait-until
+                   (lambda () (or failure (< (- sent received) tetris-mit-kav-window)))
+                   30)
+                  (when failure (throw 'stop nil))
+                  (apply #'tetris-mit-send proc
+                         (append (mapcar (lambda (e)
+                                           (tetris-mit-make-event
+                                            (aref e 1)
+                                            (tetris-mit--event-down-p (aref e 2))))
+                                         (car step))
+                                 (list (tetris-mit-make-tick (cdr step)))))
+                  (setq sent (+ sent (cdr step)))
+                  (when (and progress (>= (- received shown) 60))
+                    (setq shown received)
+                    (funcall progress received frames))))
+              (tetris-mit--wait-until (lambda () (or failure (>= received frames)))
+                                      60)
+              (unless (or failure (>= received frames))
+                (setq failure (format "timed out after %d/%d frames"
+                                      received frames)))))))
+      (setq finished t)
+      (when (process-live-p proc) (delete-process proc)))
+    (list :received received :error failure :hello hello)))
+
 (defun tetris-mit--kav-log (buffer text)
   "Append TEXT to BUFFER, if it is live."
   (when (buffer-live-p buffer)
@@ -716,78 +853,24 @@ Return a plist (:id :file :matched :total :pass :error :line).
          (every (alist-get 'digest_every trace))
          (expected (append (alist-get 'digests trace) nil))
          (got (make-vector frames nil))
-         (received 0) (hello nil) (failure nil) (last-rows nil)
-         (proc nil) (finished nil) (tries 0)
-         (handler
-          (lambda (p msg)
-            (when (eq p proc)
-              (pcase (alist-get 'type msg)
-                ("hello" (setq hello msg))
-                ("frame"
-                 (let ((k (alist-get 'frame_no msg))
-                       (rows (alist-get 'rows msg)))
-                   (if (not (eql k received))
-                       (setq failure (format "frame_no %s, expected %d" k received))
-                     (aset got k (tetris-mit-frame-digest rows))
-                     (setq last-rows rows)
-                     (cl-incf received))))
-                ("error"
-                 (setq failure (format "%s: %s" (alist-get 'code msg)
-                                       (alist-get 'message msg))))
-                ("closed"
-                 (unless finished
-                   (setq failure (or failure "connection closed")))))))))
+         (last-rows nil)
+         (failure nil))
     (tetris-mit--kav-log
      buffer (format "%s  %s  seed %d, %d frames, %d digests (every %d)\n"
                     id (file-name-nondirectory file) seed frames
                     (length expected) every))
-    (unwind-protect
-        (progn
-          ;; The previous session may still be closing on the server.
-          (while (progn
-                   (setq hello nil failure nil)
-                   (setq proc (tetris-mit-open (concat "tetris-mit-" id) host port
-                                               "controller" handler
-                                               `((seed . ,seed))))
-                   (tetris-mit--wait-until (lambda () (or hello failure)) 10)
-                   (and (not hello) failure (string-prefix-p "busy" failure)
-                        (< (cl-incf tries) 50)))
-            (delete-process proc)
-            (sleep-for 0.05))
-          (cond
-           ((not hello)
-            (setq failure (or failure "no hello from the server")))
-           ((not (equal (alist-get 'clock hello) "lockstep"))
-            (setq failure (format "server clock is %s; KAV replay needs --clock lockstep"
-                                  (alist-get 'clock hello))))
-           ((not (eql (alist-get 'seed hello) seed))
-            (setq failure (format "the server did not take seed %d" seed)))
-           (t
-            (let ((sent 0) (shown 0))
-              (catch 'stop
-                (dolist (step (tetris-mit--kav-schedule (alist-get 'events trace)
-                                                        frames))
-                  (tetris-mit--wait-until
-                   (lambda () (or failure (< (- sent received) tetris-mit-kav-window)))
-                   30)
-                  (when failure (throw 'stop nil))
-                  (apply #'tetris-mit-send proc
-                         (append (mapcar (lambda (e)
-                                           (tetris-mit-make-event
-                                            (aref e 1) (eq (aref e 2) t)))
-                                         (car step))
-                                 (list (tetris-mit-make-tick (cdr step)))))
-                  (setq sent (+ sent (cdr step)))
-                  (when (>= (- received shown) 60)
-                    (setq shown received)
-                    (tetris-mit--kav-progress buffer received frames))))
-              (tetris-mit--wait-until (lambda () (or failure (>= received frames)))
-                                      60)
-              (unless (or failure (>= received frames))
-                (setq failure (format "timed out after %d/%d frames"
-                                      received frames)))))))
-      (setq finished t)
-      (when (process-live-p proc) (delete-process proc)))
+    (setq failure
+          (plist-get
+           (tetris-mit-lockstep-run
+            host port seed frames (alist-get 'events trace)
+            (lambda (msg)
+              (let ((rows (alist-get 'rows msg)))
+                (aset got (alist-get 'frame_no msg) (tetris-mit-frame-digest rows))
+                (setq last-rows rows)))
+            :name (concat "tetris-mit-" id)
+            :progress (lambda (received total)
+                        (tetris-mit--kav-progress buffer received total)))
+           :error))
     (let* ((actual (cl-loop for k below frames
                             when (or (zerop (% k every)) (= k (1- frames)))
                             collect (aref got k)))
@@ -1033,15 +1116,16 @@ They default to `tetris-mit-display-host' and `tetris-mit-display-port'."
           tetris-mit--mirror-errors nil
           tetris-mit--mirror-server nil)
     (setq tetris-mit--mirror-process
-          (tetris-mit-open "tetris-mit-mirror"
-                           (or host tetris-mit-display-host)
-                           (or port tetris-mit-display-port)
+          (let ((target (tetris-mit-resolve-endpoint
+                         (or host tetris-mit-display-host)
+                         (or port tetris-mit-display-port) "producer")))
+            (tetris-mit-open "tetris-mit-mirror" (car target) (cdr target)
                            "producer"
                            (lambda (proc msg)
                              (when (buffer-live-p buffer)
                                (with-current-buffer buffer
                                  (when (eq proc tetris-mit--mirror-process)
-                                   (tetris-mit--mirror-receive msg)))))))
+                                   (tetris-mit--mirror-receive msg))))))))
     (advice-add 'gamegrid-set-cell :after #'tetris-mit--mirror-after-set-cell)
     (tetris-mit--mirror-schedule)))
 
