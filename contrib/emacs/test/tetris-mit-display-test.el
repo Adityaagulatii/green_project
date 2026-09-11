@@ -321,6 +321,26 @@ sys.stdout.write(frame_to_ansi(tuple(tuple(tuple(c) for c in r) for r in rows)) 
                            (car (last (tetris-mit-test--engine-digests 7 150 script))))))
         (delete-directory dir t)))))
 
+(ert-deftest tetris-mit-display-test-demoted-controller ()
+  "Contract v1: a gatekeeper demotes the display's controller to a viewer.
+The display acts on client_role: its keys stop playing."
+  (let* ((server (tetris-mit-test--fake-server
+                  (lambda (proc msg)
+                    (when (equal (alist-get 'type msg) "hello")
+                      (tetris-mit-test--fake-send
+                       proc (tetris-mit-test--server-hello
+                             1 '(client_role . "viewer")))))))
+         (port (process-contact server :service)))
+    (unwind-protect
+        (tetris-mit-display-test--fresh
+          (tetris-mit-display-connect "127.0.0.1" port "controller")
+          (should (eq tetris-mit--process tetris-mit-display--process))
+          (should (tetris-mit--wait-until (lambda () tetris-mit-display--server) 10))
+          (should (equal tetris-mit-display--role "viewer"))
+          (should-not tetris-mit--process)
+          (should (string-match-p "admitted as viewer" (buffer-string))))
+      (delete-process server))))
+
 (provide 'tetris-mit-display-test)
 
 ;;; tetris-mit-display-test.el ends here
