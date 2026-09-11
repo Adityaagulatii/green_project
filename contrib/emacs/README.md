@@ -202,6 +202,60 @@ contrib/emacs/media/record.sh cast                         # or one step: trace 
 
 It needs Emacs 28.1 or later, asciinema 3.x, and agg: on FreeBSD, `pkg install asciinema asciinema-agg`. The `agg` package is Anti-Grain Geometry, not this. It also needs a Python that can import the engine, with no extra packages. It uses the settings of `docs/media/record_casts.sh`: `asciinema rec --headless -f asciicast-v2`, and agg with DejaVu Sans Mono and line height 1.2. Emacs runs as `emacs -Q` plus a throwaway init directory whose only line, `(setq xterm-query-timeout nil)`, skips xterm.el's terminal queries, which a headless recorder never answers. The inputs, and so every frame, are deterministic. Only the wall-clock timing varies with host load, and any stall shows in the summary. The recording was made on FreeBSD 15.1 with Emacs 31.1, Python 3.12.14, asciinema 3.2.1 and agg 1.9.0. Nothing is uploaded.
 
+## Emacs as a display source: `tetris-mit-display-source.el`
+
+`tetris-mit-display-source.el` is the **source** side of the user's display protocol, **wal.sh/tools/display v0.2.1**. The protocol is pinned verbatim at `/scratch/work/tetris-parallel/inputs/wal-sh-display-0.2.1/` (`spec.md` and `capabilities.json`), and PROTOCOL.md §5.4 cites it. Emacs reserves a display on a relay, sends frames, renews when it is idle, and releases on quit or kill-buffer. It never draws: a browser sink or the building does.
+
+| Command | Frames it sends |
+|---|---|
+| `M-x tetris-mit-display-source-game` | whatever the overlay display shows: the engine server, or an in-process provider |
+| `M-x tetris-mit-display-source-tetris` | stock tetris.el's playing field, in its buffer |
+
+**Defaults.** This repository reserves **`green-building`** (9 × 17, the facade) by default; the spec's own default is `cga40`. The format is **`pal16`**, and the URL is a local mock relay, `ws://127.0.0.1:8765/tools/display/ws`.
+
+**On the wire (spec v0.2.1).**
+- **`reserve`** carries `format`: `pal16` or `hex` (`tetris-mit-display-source-format`). A source never sends `rgb24`: the spec leaves that to relays and shims.
+- **`granted`** gives the grid (w × h), the fps, the format and the display's **16-entry palette**.
+- **A pal16 frame** is a binary message of w·h bytes, one palette index 0–15 per cell, row-major, row 0 at the top.
+  - With `tetris-mit-display-source-sequence`, a 2-byte big-endian prefix carries the frame count modulo 65536.
+  - Beware the wrap: the spec's rule, read literally, has the relay drop every frame after 65535 → 0 (with `rate`) until the lease ends. The mock relay does this, and the test shows it.
+- **A hex frame** is a text message of h lines of w lower-case hex digits, each ending in LF.
+- **The relay's errors**: `not-holder` loses the lease. `bad-frame-length`, `bad-format`, `rate` and `unknown-op` are recorded and counted (`last-error`, `rejected`), and the lease is kept.
+
+**Quantization is the source's job** (the spec's NR-QUANT). Each colour maps to the nearest of the 16 palette entries that `granted` announced, by squared sRGB distance, with ties to the lower index. The map is cached per colour, so the SPEC palette becomes a direct table. On cga it is:
+
+| SPEC colour | `.` | `W` | `I` | `J` | `L` | `O` | `S` | `Z` | `T` | `G` (ghost) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cga index | 0 | 15 | 11 | 1 | 6 | 14 | 2 | 4 | 5 | 0 |
+
+L's orange is equally near entries 6, 12 and 14, so it takes 6. The ghost is dark enough to be unlit.
+
+**Safety.** Only loopback relay URLs are accepted unless `tetris-mit-display-source-allow-remote` is set. Nothing here connects to wal.sh.
+
+**Transport.** websocket.el (GNU ELPA or MELPA) is needed for a real connection. It is **not installed** where this was built, so the tests take one of two routes:
+- **A fake link** (`tetris-mit-display-source-make-link`) covers framing, pacing and the lease.
+- **`test/display-relay-bridge.py`** is a small WebSocket bridge (Python with `websockets`), which lets ERT drive the real source against the **displays kit's v0.2.1 mock relay**. Both of these tests skip when that relay is not in the checkout, and until contrib/displays' v0.2.1 is merged, `TETRIS_MIT_DISPLAYS_DIR` can point at it:
+
+```sh
+D=/path/to/contrib/displays   # the displays kit with its v0.2.1 relay and fixtures
+TETRIS_MIT_DISPLAYS_DIR=$D TETRIS_MIT_DISPLAY_FIXTURES=$D/contract/fixtures \
+  emacs --batch -Q -L contrib/emacs -L contrib/emacs/test -l ert \
+    -l contrib/emacs/test/tetris-mit-display-source-test.el -f ert-run-tests-batch-and-exit
+```
+
+**Tests.**
+- **The user's boundaries**, at 9 × 17:
+  - a pal16 frame of w·h or w·h+2 bytes decodes, and w·h−1, w·h+1, w·h+3 and empty frames are `bad-frame-length`;
+  - index 15 is a cell, and 16 and 255 are `bad-format`;
+  - the sequence goes 65534, 65535, 0;
+  - pal16 and hex frames of the same cells decode to the same cells, with and without hex's closing blank line.
+- **The kit's fixtures**, when present: `frames.json` (every pal16 and hex case), `equivalence.json` (the source's encoders reproduce both forms byte for byte) and `quantize.json` (224 cases on six palettes).
+- **The mock relay**, over the bridge:
+  - `granted` gives the green-building grid and the cga palette, and a viewer receives the right indices;
+  - the relay drops the frame numbered 0 after 65535 with `rate`;
+  - a 152-byte frame and a byte of 16 are refused, with the lease kept;
+  - after release, a hex session is fanned out as pal16.
+
 ## Driving the real building on Sep 29
 
 The facade is just another SPEC §2.3 `Display`. Either server can drive one, with `--display module:attr`. This takes any object with `send(frame)` and `makeframe()`, such as a subclass of `impl/python/legacy/utilities/display.py`'s `Display`, and a legacy one is handed a legacy `Frame` of `Color`. Point it at whatever the hack exposes:
