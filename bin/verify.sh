@@ -23,7 +23,10 @@ APPENDIX="$PY $ROOT/spec/conformance/gen_appendix.py"
 TRACES="$ROOT/spec/conformance/traces"
 PY_DRIVER="env PYTHONPATH=$ROOT/impl/python/engine $PY -m tetris_engine.conformance"
 HY_DRIVER="env PYTHONPATH=$ROOT/impl/hy $PY -m hy -m tetris_hy.conformance"
-MUTANTS="ccw-release-keeps-dcd gravity-ceil-cadence level-target-plus-six standard-180-kicks no-ghost"
+# The last mutant keeps every frame right but reports a phase log with an
+# illegal edge (gameover -> playing): only the runner's state gate
+# (T-legality, SPEC P20) can reject it.
+MUTANTS="ccw-release-keeps-dcd gravity-ceil-cadence level-target-plus-six standard-180-kicks no-ghost illegal-edge-gameover-playing"
 
 # Implementations, in phase order. Later phases add a name here and a
 # line to driver().

@@ -32,17 +32,22 @@ own digests or final: those belong to the runner."
   out)
 
 (defn run-trace [trace]
-  "Replay a trace's input on a fresh engine."
+  "Replay a trace's input on a fresh engine. Besides the digests and the
+  final observation, report the phase of every frame, for the gate's
+  T-legality check (P20)."
   (setv frames (int (get trace "frames"))
         every (int (get trace "digest_every"))
         inputs (events-by-frame (get trace "events"))
         s (init (get trace "seed"))
-        digests [])
+        digests []
+        phases [])
   (for [k (range frames)]
     (setv s (step s (.get inputs k #())))
+    (.append phases (phase s))
     (when (or (= 0 (% k every)) (= k (- frames 1)))
       (.append digests (digest (render-codes s)))))
-  {"name" (.get trace "name") "digests" digests "final" (observe s)})
+  {"name" (.get trace "name") "digests" digests "phases" phases
+   "final" (observe s)})
 
 (defn make-trace [name description seed frames events [digest-every 1] [covers #()]]
   "A trace (§12) of this engine's run on `events` ([frame action down]
