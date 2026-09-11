@@ -187,9 +187,13 @@ The server runs a SPEC-conformant engine and streams its frames.
     This admits or refuses browsers at the handshake. It is not authentication, and it changes nothing in the protocol.
   - **Extensions.** `permessage-deflate` MAY be negotiated; it does not change the semantics.
 - **5.4 Displays: the external display protocol** (cited, not a binding of this contract). Physical and remote displays speak their own protocol, which is **normative for displays and external to this contract**:
-  - it is the user's `wal.sh/tools/display` protocol, dated 2026-09-11;
-  - the verbatim copy is `/scratch/work/tetris-parallel/inputs/wal-sh-display-protocol.md`, sha256 `d8a3b49de70c88d60f59093481392059c07159b409ba9d9e758598e4fd301aac`;
-  - it has three parts: a sink page, a static `capabilities.json`, and a relay with one lease per display. Text messages are JSON control and binary messages are frames.
+  - it is the user's `wal.sh/tools/display` spec **v0.2.1** (2026-09-11), published at `https://wal.sh/tools/display/spec` together with `capabilities.json`;
+  - the verbatim pinned copy is `/scratch/work/tetris-parallel/inputs/wal-sh-display-0.2.1/`:
+    - `spec.md`, sha256 `f2028d88f43cde03bba3c870ce4011c67d8d52762c082770cf5960f08f38ed2b`;
+    - `capabilities.json`, sha256 `11fdc2b39380c84bad9702fa9aefe402e8761a1b082467b2ef27487edbb88275`;
+    - `contrib/displays/contract/` carries the same files with its conformance kit;
+  - it supersedes the earlier text, `inputs/wal-sh-display-protocol.md`, which put `w*h*3` RGB on the wire;
+  - it has three parts: a sink page, a static `capabilities.json`, and a relay with one lease per display. Text messages are JSON control or `hex` frames. Binary messages are `pal16` frames, one palette index from 0 to 15 per cell. `rgb24` is accepted only at a relay or a shim.
 
   This contract cites that protocol and does not restate or fork it. Where this section and it disagree, it wins.
   - **Roles.** A display is a sink that implements SPEC §2.3 and nothing else. The relay holds one lease per display, and fans the lease holder's frames out to the display's viewers.
@@ -200,8 +204,10 @@ The server runs a SPEC-conformant engine and streams its frames.
     - A feed that bridges the two is a game viewer on one side and a display source on the other.
     - The JSON binding stays at `/tetris-17x9` (§5.3). The display endpoint is the display protocol's own (`/tools/display/ws` in the reference deployment).
   - **Adaptation is outside the core.** A source maps the SPEC 17×9 frame onto the display's `w`×`h`, as announced by `capabilities.json` and by `caps`/`granted`. The mapping may scale, crop, pad, rotate or reduce the palette. It happens in the source, outside the engine and outside the core frame semantics.
-    - For a display with `w` 9 and `h` 17, the Green Building's own shape, the SPEC frame's 459 row-major RGB bytes already are a display frame, and their SHA-256 is the frame's SPEC §9.4 digest.
-    - For any other profile, the display frame is not a SPEC frame. The digest, the frame validation of §3 and the transcripts of §10 apply to this contract's JSON binding only.
+    - For a display with `w` 9 and `h` 17, the Green Building's own shape, the geometry is the SPEC frame's, but the wire carries palette indices, not RGB.
+      - The source maps each SPEC palette colour to the nearest entry of the display's palette; the display spec's NR-QUANT puts quantization at the source.
+      - The SPEC §9.4 digest is over the RGB frame, so it is not a digest of the display frame.
+    - For every profile, the display frame is not a SPEC frame. The digest, the frame validation of §3 and the transcripts of §10 apply to this contract's JSON binding only.
   - **Pacing and sequence numbers.** The relay drops frames that come faster than the display's `fps`, so a source SHOULD send at most `fps` frames per second (30 for the facade). A source that uses the optional 2-byte sequence prefix SHOULD send the source `frame_no` modulo 65536.
   - **Leases belong to the display.** The display's lease (`reserve`, `granted`/`busy`, `renew`, `release`, `ttl`) is part of the display protocol and is outside the game core.
     - It adds no field to this contract, and it does not conflict with §9.3. A lease decides who paints a *display*; admission to a *game server* stays with the outer gatekeeper.
@@ -346,7 +352,9 @@ Over WebSocket, each line above is one text message on `ws://127.0.0.1:1710/tetr
 - The delivery order is normative (§4.3).
 - The size limit is stated as 65535 bytes of JSON text, which is binding-independent. For TCP it is unchanged.
 - The WebSocket binding (§5.3), and Unix-domain sockets as carriers (§5.1).
-- Displays (§5.4): the user's `wal.sh/tools/display` protocol is cited as the normative, external display protocol. Our servers and feeds are only its sources. It never shares an endpoint with the game protocol, the adaptation to device profiles lives outside the core, and its per-display lease belongs to the display.
+- Displays (§5.4): the user's `wal.sh/tools/display` spec is cited as the normative, external display protocol.
+  - The citation is pinned to v0.2.1: `pal16` or `hex` frames of palette indices, with quantization at the source. It supersedes the first text's `w*h*3` RGB.
+  - Our servers and feeds are only its sources. It never shares an endpoint with the game protocol, the adaptation to device profiles lives outside the core, and its per-display lease belongs to the display.
 - `spec_version` semantics (§2).
 - The ladder classification is corrected: the connection is a branching lifecycle, not a chain (§8).
 - Security (§9):
