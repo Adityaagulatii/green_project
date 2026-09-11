@@ -54,12 +54,32 @@ def no_ghost():
     frame.compose = lambda board, piece, ghost=True: original(board, piece, False)
 
 
+def illegal_edge_gameover_playing():
+    """A lying driver: the engine is right, but its phase log jumps from a
+    game over straight into play (the first countdown frame after a game
+    over is reported as "playing"). The digests and the final observation
+    are untouched, so only the runner's state gate (T-legality, SPEC P20)
+    can reject it."""
+    original = conformance.run_trace
+
+    def patched(trace):
+        result = original(trace)
+        phases = result["phases"]
+        for k in range(1, len(phases)):
+            if phases[k - 1] == "gameover" and phases[k] == "countdown":
+                phases[k] = "playing"
+                break
+        return result
+    conformance.run_trace = patched
+
+
 MUTANTS = {
     "ccw-release-keeps-dcd": ccw_release_keeps_dcd,
     "gravity-ceil-cadence": gravity_ceil_cadence,
     "level-target-plus-six": level_target_plus_six,
     "standard-180-kicks": standard_180_kicks,
     "no-ghost": no_ghost,
+    "illegal-edge-gameover-playing": illegal_edge_gameover_playing,
 }
 
 

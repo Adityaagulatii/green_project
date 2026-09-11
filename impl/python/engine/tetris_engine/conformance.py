@@ -38,17 +38,21 @@ def group_events(events):
 
 
 def run_trace(trace):
-    """Replay a trace's inputs; return {"name", "digests", "final"}."""
+    """Replay a trace's inputs; return {"name", "digests", "phases", "final"}.
+    ``phases`` is the phase of every frame, for the gate's T-legality check
+    (SPEC P20)."""
     frames = int(trace["frames"])
     every = int(trace.get("digest_every", 1))
     by_frame = group_events(trace["events"])
     s = core.new_game(trace["seed"])
-    digests = []
+    digests, phases = [], []
     for k in range(frames):
         s = core.step(s, by_frame.get(k, ()))
+        phases.append(s.phase)
         if k % every == 0 or k == frames - 1:
             digests.append(codes_digest(render_codes(s)))
-    return {"name": trace.get("name"), "digests": digests, "final": observe(s)}
+    return {"name": trace.get("name"), "digests": digests, "phases": phases,
+            "final": observe(s)}
 
 
 def make_trace(name, description, seed, frames, events, digest_every=1,

@@ -1,6 +1,6 @@
 # SPEC: 17×9 Tetris for the MIT Green Building facade
 
-**Spec v1** · sealed by the Python reference (`impl/python/engine`) · seal record: [`spec/SEALS.md`](spec/SEALS.md)
+**Spec v2** · sealed by the Hy rebuild (`impl/hy`); v1 was sealed by the Python reference (`impl/python/engine`) · seal record: [`spec/SEALS.md`](spec/SEALS.md)
 
 This is the one canonical document for the game, its simulator and its conformance traces. The README, the plan and every implementation defer to it: a derived document that disagrees with this file is the bug. A run that refutes this file amends it, through the protocol in [`docs/POLYGLOT-PLAN.md`](docs/POLYGLOT-PLAN.md).
 
@@ -17,7 +17,7 @@ This is the one canonical document for the game, its simulator and its conforman
 
 ## 1. Scope and conformance classes
 
-An **engine** is a pure function pair, `init(seed) → S` and `step(S, E) → S'`, with a pure `render(S) → Frame`. There is no I/O, clock or global randomness in the engine core. An engine conforms to Spec v1 if it reproduces every trace in `spec/conformance/traces/` exactly (§12), and its property-based tests cover P1…P19 (§11).
+An **engine** is a pure function pair, `init(seed) → S` and `step(S, E) → S'`, with a pure `render(S) → Frame`. There is no I/O, clock or global randomness in the engine core. An engine conforms to the spec if it reproduces every known-answer vector of Appendix A exactly: the primitive vectors (A.1) and every trace vector (A.2), which are the traces in `spec/conformance/traces/` (§12). Its property-based tests MUST also cover P1…P20 (§11).
 
 A **simulator** is the host around an engine or another Animation: the display sink, the recorder, renderers and input sources (§10).
 
@@ -204,7 +204,7 @@ A `hold` press with `hold_available` false, and any `hold` release, does nothing
    - If any row is full, remember the **flash board**: `B` with every full row entirely `W`. The display shows it for 5 frames (§8.2).
    - Then, for each full row in ascending order: delete it, insert an empty playfield row at row 1 (row 0 is untouched), and score it (§6.2).
 3. **Spawn.** Draw the next piece (§9.3) at spawn and set `hold_available := true`.
-4. **Game over.** If the new piece collides, the game is over. Set `high_score := max(high_score, score)`, remember the board as the game-over board, and start the game-over sequence (§8.3). If the lock came from a hard drop, the new game will start with `dcd = 0`; otherwise it starts with `dcd = 2` (**QUIRK-11**).
+4. **Game over.** If the new piece collides, the game is over. Set `high_score := max(high_score, score)`, remember the board as the game-over board, and start the game-over sequence (§8.3). *(Clarification, v2: the game-over board is `B` after step 2's clear, which is what the fill-up of §8.3 shows; the flash, if any, shows the board before it.)* If the lock came from a hard drop, the new game will start with `dcd = 0`; otherwise it starts with `dcd = 2` (**QUIRK-11**).
 
 The clear and the spawn take effect in the state immediately. The flash and game-over sequences only change what is *displayed*, and when the rest of the logical frame runs (§9.2).
 
@@ -307,6 +307,8 @@ row  "3"        "2"        "1"
 
 **QUIRK-9.** The legacy glyph arrays have 19 rows and are sent as is. Their rows 17–18 are black and fall outside the 17-row display. The spec frame is their first 17 rows.
 
+*Illustration (non-normative):* [countdown.gif](docs/media/casts/countdown.gif). The same frames are pinned by the boot countdown of KAV-01 and the post-game-over countdown of KAV-12 (Appendix A.2).
+
 ## 9. Conformance mode (determinism)
 
 ### 9.1 Frames, phases and the initial state
@@ -334,6 +336,24 @@ frame k = render(S_{k+1})
 
 The boot sequence is therefore frames 0–89 (the countdown) and frame 90 (black). **Frame 91 is the first logical play frame.**
 
+**Ladder semantics.** The run is described in the terms of the state-machine ladder (`aygp-dr/state-machine-ladder`, `spec.org` sealed at tag `spec-v2.4.0`, sha256 `88654eb635fd4d04785aef999046c7182297d091188be9013e5c67e2c9ee51fc`), which is cited here, not restated:
+- the **event trace** `E_0, E_1, …`, per frame and sorted by frame, is the source of truth;
+- `step` folded over it from `init(seed)` is the **derivation**. It is a pure function, so the same log always gives the same states and frames;
+- the frames and the §12 observations are the **view**: derived, and never authoritative.
+
+The phase machine is a **CYCLE** (ladder §2.2): countdown → playing → … → gameover → countdown recurs for the lifetime of the engine. Its right projection is the current state, which is the observation's `phase`, together with transition legality. A projection onto independent flags (such as "is playing" and "is clearing") is unsound for a cycle and is not used. The legal edges, from the phase of `S_k` to the phase of `S_{k+1}`, follow from the pseudocode of §9.2, and experiment [006](experiments/006-phase-edges/) checks them against the Python reference:
+
+**Table 9.1. Legal phase edges** (✓ legal, — illegal).
+
+| from \ to | countdown | playing | clearing | gameover |
+|---|---|---|---|---|
+| **countdown** | ✓ timer | ✓ play starts or resumes | ✓ a lock in the frame that ends the countdown | ✓ likewise |
+| **playing** | — | ✓ | ✓ a lock clears rows | ✓ a spawn collides |
+| **clearing** | — | ✓ the flash ends | ✓ timer, or the resumed rest clears again | ✓ a pending game over, or the resumed rest tops out |
+| **gameover** | ✓ reset | — | — | ✓ timer |
+
+Twelve edges are legal. The frame that ends a countdown runs events: at boot the batch of frame 91, after a game over the resumed rest of a frame. A lock among them can start a flash or a game over at once. Ordinary play does not reach those two edges, but conforming input can, and experiment 006 constructs both. S0 is a countdown (above), so a run's phases form a path from countdown over legal edges (P20).
+
 ### 9.2 The step
 
 A **logical frame** is one iteration of the legacy play loop. It runs these stages in order:
@@ -353,6 +373,7 @@ A resumed frame can suspend again. After a game over, the resumed events apply t
 Events delivered while suspended (`E_k` during an animation):
 - **during a flash**, and on the frame the flash resumes, they are **queued**. They are applied at the beginning of the next fresh logical frame, before that frame's own events.
 - **during a game over or a countdown** they are **discarded** (QUIRK-12). So is anything already queued.
+- *Clarification (v2).* The frame right after the 90 countdown frames that follow a game over (the slot of QUIRK-10) is not a countdown frame. It resumes the suspended frame, and its own events are **queued**, like those of the frame on which a flash resumes: this is the pseudocode's `queue := queue ++ E; RESUME`. At boot, frame 91 is instead a fresh logical frame, and its events apply in it. On the frame on which a flash hands over to a pending game over, queuing and discarding are indistinguishable, because the reset (§8.3) empties the queue.
 
 Normative pseudocode:
 
@@ -443,7 +464,7 @@ The PRNG state is never reseeded. **LEGACY-NONDET:** the legacy uses unseeded `n
 
 ## 11. Properties
 
-Every implementation's property-based tests MUST cover P1…P19, with generated seeds and generated event sequences (with events in random frames, including presses without releases, releases without presses, and all eight actions). "Within a game" means between two resets.
+Every implementation's property-based tests MUST cover P1…P20 (P20 from v2 on: the Python reference sealed v1 before P20 existed, and the gate checks P20 on the traces for every implementation), with generated seeds and generated event sequences (with events in random frames, including presses without releases, releases without presses, and all eight actions). "Within a game" means between two resets.
 
 - **P1 Frame contract.** Every rendered frame is 17×9, every channel is an integer in 0..255, and every color is in the palette (§4.1).
 - **P2 Purity and determinism.** `step` never mutates its input. The same seed and events always give the same frames and digests.
@@ -463,11 +484,14 @@ Every implementation's property-based tests MUST cover P1…P19, with generated 
 - **P16 Animation lengths.** A clear shows exactly 5 flash frames. A game over shows exactly 34 + 150 + 34 frames, then 90 countdown frames. Boot is 90 countdown frames and 1 black frame.
 - **P17 Reset.** After the game-over sequence: score, level and lines are 0, hold is empty, the board is empty, `high_score = max(old high_score, final score)`, and the next game's pieces come from a fresh bag.
 - **P18 Suspended input.** Events delivered during a flash take effect after it, in order. Events delivered during a game over or a countdown have no effect.
-- **P19 Known answers.** The PRNG, bag and digest vectors in Appendix A reproduce exactly.
+- **P19 Known answers.** The primitive vectors of Appendix A.1 (PRNG, bag and digest) reproduce exactly.
+- **P20 T-legality** (from v2). The phases of `S_0, S_1, S_2, …` form a path of legal edges (Table 9.1): `S_0` is a countdown, and every pair of consecutive frames' phases is a legal edge. The gate also checks P20 on every trace, for every implementation (§12).
 
 ## 12. Conformance traces
 
-Traces live in `spec/conformance/traces/*.json`. They are the **oracle**, generated by the sealing implementation and never edited by hand (see `spec/conformance/README.md` for the driver protocol and the runner). Each file is one JSON object:
+Traces live in `spec/conformance/traces/*.json`. They are the **oracle**, generated by the sealing implementation and never edited by hand (see `spec/conformance/README.md` for the driver protocol and the runner). The trace `NN-name.json` is the known-answer vector `KAV-NN` of Appendix A.2, which lists every vector with its purpose, seed, input and digests; this section defines the file format that Appendix A.2 summarises.
+
+An implementation's driver replays a trace and reports its digests, the phase of every frame, and the final observation. The gate checks them in the order of the state-machine ladder (§9.1): first the **schema gate** (the fields and domains of the trace, then of the result), then the **state gate** (P20 on the reported phases), then the **oracle** (the digests and the observation against the trace's, below). Each file is one JSON object:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -492,6 +516,8 @@ The **observation** `final` is:
   "hold": null | {"shape": ..., "rotation": 0..3},
   "frame_hex": the 459 bytes of the final frame as lowercase hex }
 ```
+
+*Clarification (v2).* `active` and `hold` read the state in every phase, not only while playing. During a game-over sequence, `active` is the piece whose spawn collided; from the reset on, it is the new game's first piece.
 
 An implementation **passes** a trace if its digests and its observation are all equal to the trace's. The gate `bin/verify.sh` runs every implementation against every trace. It passes only with **zero findings**; there is no warning tier.
 
@@ -544,6 +570,15 @@ The joystick axis (±0.5) maps to the same moves. Note that the legacy `InputMan
 
 ## Appendix A. Known-answer vectors (normative)
 
+A conforming implementation MUST reproduce every known-answer vector (KAV) in this appendix exactly. There are two kinds:
+
+- **Primitive vectors** (A.1) pin the PRNG, the bag and the digest (P19).
+- **Trace vectors** (A.2) pin whole runs. The conformance trace `spec/conformance/traces/NN-name.json` is the vector `KAV-NN`; its ID is the file's number and never changes. The trace file is the full, machine-readable vector: seed, events, digests and the final observation (§12). Tables A.2a and A.2b summarise it. They are generated from the trace files by `spec/conformance/gen_appendix.py` and never edited by hand, and `bin/verify.sh` fails if they differ from the traces.
+
+*Planned for v3, not part of v2:* vectors defined by seeds alone, with a bag seed and an input seed that drives a spec-defined input generator, so that a vector needs no event list.
+
+### A.1 Primitive vectors
+
 - **xorshift32.** Outputs of `next` from `seed_state(seed)`:
   - seed `1`: 270369, 67634689, 2647435461, 307599695, 2398689233
   - seed `42`: 11355432, 2836018348, 476557059, 3648046016, 3759983556
@@ -555,6 +590,52 @@ The joystick axis (±0.5) maps to the same moves. Note that the legacy `InputMan
 - **Digests.**
   - all-black frame: `e0ee29ce7978a33861e6e63545deda9e734ea784ee8e4ba6fd6aa56b775f6ca9`
   - all-white frame: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`
+
+### A.2 Trace vectors
+
+<!-- BEGIN KAV: generated by spec/conformance/gen_appendix.py from spec/conformance/traces; do not edit by hand -->
+
+Trace set: 14 vectors, `sha256(traces)` = `981baab4279c5c9f93f42eda23f1eb9f2b0889b4c228637e2ac19b9a479c2026`.
+
+**Table A.2a. The vectors.** Frames count from 0, the first countdown frame; play starts at frame 91 (§9.1).
+
+| ID | Trace | Purpose | Seed | Input | Frames | End state |
+|---|---|---|---|---|---|---|
+| KAV-01 | `01-idle-gravity` | No input: boot countdown, level-0 gravity every 25 frames, gravity lock and respawn. | 1 | none | 791 | playing, score 0, level 0 |
+| KAV-02 | `02-move-left-right` | Shifts one and many cells per frame, walls block, releases do nothing. | 7 | 40 events, frames 93–111: `left` 17↓ 2↑, `right` 14↓ 1↑, `hard_drop` 2↓ 2↑, `rotate_cw` 1↓ 1↑ | 151 | playing, score 0, level 0 |
+| KAV-03 | `03-rotate-cw-ccw` | CW/CCW rotations, latches, DCD gating, CCW release resetting DCD, swallowed presses. | 3 | 42 events, frames 92–120: `hard_drop` 3↓ 3↑, `rotate_cw` 10↓ 10↑, `rotate_ccw` 6↓ 6↑, `rotate_180` 2↓ 2↑ | 161 | playing, score 0, level 0 |
+| KAV-04 | `04-rotate-kicks` | Wall kicks (SRS offset tests 2-5) for T, I and a third piece; seed 34 gives T, I first. | 34 | 53 events, frames 92–111: `left` 19↓ 0↑, `right` 6↓ 0↑, `hard_drop` 3↓ 3↑, `rotate_cw` 7↓ 7↑, `rotate_ccw` 4↓ 4↑ | 141 | playing, score 0, level 0 |
+| KAV-05 | `05-rotate-180` | 180-degree rotations for T, I and O, at walls; kick offsets = KICKS_180[src] - KICKS[dst]. | 268 | 64 events, frames 92–115: `left` 14↓ 0↑, `right` 14↓ 0↑, `hard_drop` 3↓ 3↑, `rotate_cw` 3↓ 3↑, `rotate_180` 12↓ 12↑ | 141 | playing, score 0, level 0 |
+| KAV-06 | `06-soft-drop` | Held soft drop (one row per event) to the floor; the blocked move locks immediately (no lock delay). | 11 | 60 events, frames 92–161: `soft_drop` 53↓ 5↑, `rotate_cw` 1↓ 1↑ | 181 | playing, score 0, level 0 |
+| KAV-07 | `07-hard-drop` | Hard drop, its latch, DCD gating and the release that resets DCD. | 5 | 21 events, frames 92–101: `left` 3↓ 0↑, `hard_drop` 9↓ 7↑, `rotate_cw` 1↓ 1↑ | 121 | playing, score 0, level 0 |
+| KAV-08 | `08-hold` | Hold from an empty slot, blocked re-hold, swap-in at the spawn cell keeping rotation, hold after each lock. | 9 | 31 events, frames 92–109: `left` 2↓ 0↑, `right` 3↓ 0↑, `hard_drop` 4↓ 4↑, `rotate_cw` 1↓ 1↑, `rotate_ccw` 1↓ 1↑, `rotate_180` 1↓ 1↑, `hold` 6↓ 6↑ | 131 | playing, score 0, level 0 |
+| KAV-09 | `09-line-clear-single` | Bot play up to the first single-line clear: 5 flash frames, row removal, 100 points. | 21 | 49 events, frames 92–115: `left` 10↓ 0↑, `right` 11↓ 0↑, `hard_drop` 9↓ 9↑, `rotate_cw` 3↓ 3↑, `rotate_ccw` 1↓ 1↑, `rotate_180` 1↓ 1↑ | 118 | clearing, score 300, level 0 |
+| KAV-10 | `10-line-clear-multi` | Bot play up to the first multi-line clear; per-row scoring. | 4 | 266 events, frames 92–257: `left` 52↓ 0↑, `right` 62↓ 0↑, `hard_drop` 49↓ 49↑, `rotate_cw` 18↓ 18↑, `rotate_ccw` 5↓ 5↑, `rotate_180` 4↓ 4↑ | 262 | clearing, score 2100, level 3 |
+| KAV-11 | `11-level-up` | Bot play through two level-ups (target = level + 5); the gravity cadence speeds up. | 8 | 256 events, frames 92–246: `left` 47↓ 0↑, `right` 59↓ 0↑, `hard_drop` 49↓ 49↑, `rotate_cw` 14↓ 14↑, `rotate_ccw` 7↓ 7↑, `rotate_180` 5↓ 5↑ | 252 | playing, score 1900, level 3 |
+| KAV-12 | `12-game-over-reset` | Top-out by hard drop, fill/wait/fall, countdown without the black frame, reset, and the resumed batch on the new game with dcd = 0. | 13 | 115 events, frames 91–445: `left` 79↓ 0↑, `hard_drop` 9↓ 9↑, `rotate_cw` 9↓ 9↑ | 447 | playing, score 0, level 0 |
+| KAV-13 | `13-suspended-input` | Input during a flash is queued and applied afterwards; input during game over and countdown is discarded. | 21 | 1329 events, frames 92–430: `left` 13↓ 0↑, `right` 321↓ 0↑, `hard_drop` 15↓ 15↑, `rotate_cw` 6↓ 6↑, `rotate_ccw` 317↓ 317↑, `rotate_180` 1↓ 1↑, `hold` 317↓ 0↑ | 431 | playing, score 0, level 0 |
+| KAV-14 | `14-bot-marathon` | Long bot game with 5% random input noise: clears, levels, game overs. | 2026 | 4354 events, frames 92–3195: `left` 796↓ 3↑, `right` 916↓ 4↑, `soft_drop` 8↓ 2↑, `hard_drop` 788↓ 783↑, `rotate_cw` 314↓ 310↑, `rotate_ccw` 120↓ 122↑, `rotate_180` 87↓ 92↑, `hold` 5↓ 4↑ | 3200 | clearing, score 4300, level 5 |
+
+**Table A.2b. Checkpoint and final digests** (§9.4). The checkpoints are the frames ¼, ½ and ¾ of the way from frame 91, the first play frame, to the last frame, each rounded down to a digested frame. The final frame is frame `frames − 1`; its bytes are the observation's `frame_hex`.
+
+| ID | Checkpoints (frame: SHA-256) | Final frame SHA-256 |
+|---|---|---|
+| KAV-01 | 265: `427ef3c719f084c1b2d2df0158133b4fab331b792de0ba0732279a332dedc786`<br>440: `d0fd09f0a7593ab2fcde6d3edbf37a076b6a93ab35b4f1125c2366693a16890d`<br>615: `c2ef0dbc33dd5603df4980a84803a5b5135bcd521cb83064045069d07f9df8f0` | `a0196c5ad432c7b827ddba7e45a845fe234347168a3340070c917cbbfe74223b` |
+| KAV-02 | 105: `fe44819667f5754b05a78c9be244f9de608c78c4cf4b98ecbc37c7e5942bc034`<br>120: `d454c5944051e74485c4e881b5201d148eea01d32c8ed87625e47465dfd02d00`<br>135: `d454c5944051e74485c4e881b5201d148eea01d32c8ed87625e47465dfd02d00` | `64417379135bf117dc0ffde92ed70068cc06a76a8caf5f66e32a953ab9e1ba84` |
+| KAV-03 | 108: `296991c2a0c977f19009a4ae24ed95e5f92335191af622857bd2b6b7b101cc9f`<br>125: `9c7f22f5d6ee5624e734514056c1f9c80610d23066388a4e45f9ff43e727b0f5`<br>142: `74ac609fd1981f43f315842b74fa049bdc5e338badc113879f1a60872b239423` | `74ac609fd1981f43f315842b74fa049bdc5e338badc113879f1a60872b239423` |
+| KAV-04 | 103: `54699621bff7a0dc6e95aed6247af229deee0abd6291bceb09b1cb3858957961`<br>115: `f3dfb8e364c7b0e0f3061c69e0d74c34bf86fe42f1e22fa8af4ddd1e0e909425`<br>127: `f3dfb8e364c7b0e0f3061c69e0d74c34bf86fe42f1e22fa8af4ddd1e0e909425` | `c81aa41de2a33ee223c1c24723a9f680f39f08f8f3df37b59f9ba0800d9a4664` |
+| KAV-05 | 103: `9bf3c089962ed219ab65fe28de372595216dbe7af5cf0cc67dd5b1fb791cbd21`<br>115: `29488a56badbd4973fb8963ab7cd858030f584a4f02f860921537ef4ed86ae5f`<br>127: `29488a56badbd4973fb8963ab7cd858030f584a4f02f860921537ef4ed86ae5f` | `3a9dfdd9058e6e0c8890dfb2db323af757996d77899aa51ca73d39d40754a057` |
+| KAV-06 | 113: `056ebb65e0745929273a912854e18708eb4f3ae6b317de1f184ce9b2845d76fd`<br>135: `ab4f0a9b615e41ce808263ac4dc3fe6e76faeb23ed58bb3fd806c050f4c53e49`<br>157: `860b0469a7dce3115b93988272a056e2109aa4d761daef5add195de7b863cd9a` | `50184ed065860eef623490c7270c5960176a81c8af3fa67f6c0c12f9bde64b75` |
+| KAV-07 | 98: `11fc4307ad34d82bd59da7d4d07fdcfb249fa5f635376e4fb2c3ce1cc3a89356`<br>105: `6b1b0a801b08d8f457ad78b1f264a765cd176a5ae32f1b5d6b402f759379ec88`<br>112: `6b1b0a801b08d8f457ad78b1f264a765cd176a5ae32f1b5d6b402f759379ec88` | `11ddc6ed079e2584f8c3f14326440a41773407635674c266eaebf872da6e2b6f` |
+| KAV-08 | 100: `99eb9f9a82572eab52dad3e0108ab19d963a421c12bd920ca5291ef5e1af48d0`<br>110: `4b4020efd0ba4f926e52cdf893d39de0fe51efb22c96d06e29270d414b29d0e7`<br>120: `be3f8b9503bf4cc9ec176a6a3a3ef2a69a7fc2efb76721fa0d2d3d0e66079b21` | `be3f8b9503bf4cc9ec176a6a3a3ef2a69a7fc2efb76721fa0d2d3d0e66079b21` |
+| KAV-09 | 97: `7368f08838e703feee6d7bfd3f0a7aa3535288634547eb16b71e0a979ccb8276`<br>104: `6b920360781fcf498bf73c4f0fc9136035ec3b77d3cfbcbd43f0f95d6d34d181`<br>110: `1f93c566df246768164a022668806d5133860f7246645b79bb9fbb37e5feae06` | `fb13bb8893402d92335ff192179d1191feea1987f283361659c46e1da5ee4f83` |
+| KAV-10 | 133: `fcd6932c33c134ea0d577a5b9cfd62ec06c54d3dd648568e423705cf7c789777`<br>176: `1029a6b9a892436bd4e0ef85ce03ab836325f687836ab8b374cd1cb1844250ec`<br>218: `4a7119a149d04ca75b349fe48589889b0b93c6cd48368fb187c993bda20564a2` | `0c26280f0a3ca5daf5b23a91a64150b4fd3feea37fa848fb1cbe7b4d441a3385` |
+| KAV-11 | 131: `8f29668da62292ef90bf84bb27c6256d610d68cfa509fa9c79bb1f5b37a5039b`<br>171: `b4c9465418a61c9e406c81b5425495e5b2f7eb0172ca47e9a80d6bb1ed440dff`<br>211: `00490f09dd4325c33d5438d7fbbde1fa4ce23f434d7a9e141bd1ebc883670da1` | `e44e8cbebf175cb74d9cdd699da461f76802c17082e49b669081b0041784cb66` |
+| KAV-12 | 179: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`<br>268: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`<br>357: `f134f024aed70d187eea5a7a3bc8b53794a5759f673fc89d16ae6067880786cb` | `0b7eee180dc58e940bccd745a1f203031a4da6a070173cb3838655c9f09a836f` |
+| KAV-13 | 175: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`<br>260: `cc1c8c603a0863247abc4b8a117a234714b37d2be10ca27218301e5e617830d8`<br>345: `d2f5d956f45062abb4035fc951731700463382245b2d2a480ab4ad5098b1f9aa` | `617f2ddf3d6bd9108418c397bafd1f773b366ba0519d84a6974a8aa135e42125` |
+| KAV-14 | 868: `30843217777b64910078b36db040fb1f424e480efded20c04d3bafc62dd3281a`<br>1644: `949b442f55725abb2fcd0716072fa66304da3e09f6fde60ffadf25b5b54be308`<br>2420: `7e92e3075e8790b3e4a65000ffa20a2f0b6247676c3c1e2a40e92459b3a3d2c7` | `bd7f03eeb58d990c02a540190b8addf364f5f1869f30305b06b5db4635b7fef5` |
+
+<!-- END KAV -->
 
 ## Appendix B. QUIRK index
 
@@ -582,4 +663,9 @@ The joystick axis (±0.5) maps to the same moves. Note that the legacy `InputMan
 
 ## Changelog
 
+- **v2** (2026-09-11, Hy). Sealed by the Hy rebuild (`impl/hy`), which passed all 14 v1 traces on its first run and agrees with the Python reference frame by frame (experiment 005: zero divergences). Clarifications only, with no behaviour change: the trace set and its hash are unchanged, and the traces keep `spec_version` 1.
+  - §9.2: the frame right after the countdown that follows a game over queues its events; the hand-over from a flash to a pending game over is unobservable. §6.1: the game-over board is the post-clear board. §12: `active` and `hold` read the state in every phase.
+  - Appendix A: the known-answer vectors. Each trace is `KAV-NN`; Tables A.2a/A.2b are generated from the traces by `spec/conformance/gen_appendix.py`, and the gate rejects a hand-edited table. §1 and §12 defer to Appendix A. Seeds-only vectors are planned for v3.
+  - §9.1: the state-machine-ladder semantics. The phase machine is a CYCLE with the 12 legal edges of Table 9.1 (experiment 006); §11 adds P20 T-legality; the gate runs the schema gate, then the state gate, then the oracle.
+  - §8.4: a non-normative illustration link (`docs/media/casts/countdown.gif`).
 - **v1** (2026-09-10, Python). First sealed spec. Derived from the legacy by reading it and by differential testing against it: zero divergences over Hypothesis-generated and bot-driven action sequences (experiment 001). It defines conformance mode, 19 properties and the trace format.
