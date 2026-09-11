@@ -150,6 +150,49 @@ emacs --batch -l contrib/emacs/tetris-mit-display.el \
 
 The CLI plays the events on the SPEC engine, shows every frame, and snapshots the last frame (number FRAMES−1). It prints `snapshot OUT.{json,ans,txt}: seed S, frame F, digest D`. ERT checks that D equals the Python engine's digest of the same frame.
 
+### Recording: the display at Green Building geometry
+
+![The Emacs display in emacs -nw: a 9 x 17 game with wide windows, from the countdown through line clears and game over to the next game](media/green-building-9x17.gif)
+
+[`media/green-building-9x17.cast`](media/green-building-9x17.cast) (asciicast v2, 77 KB) and its GIF (254 KB, 39 s) show the stock overlay display, `tetris-mit-display.el`, unpatched, in `emacs -nw` on a truecolor terminal (80 × 24).
+
+**Geometry.** The grid is the facade's: **9 windows wide and 17 tall**, 153 overlays, with row 0 at the top. Each window is 3 columns × 1 line: the recording sets the existing option `tetris-mit-cell-string` to three spaces. The GIF's terminal cell is 9.6 × 19.2 px (DejaVu Sans Mono, 16 px, line height 1.2), so a window is 28.9 × 19.2 px, **1.5 : 1**, the cell aspect of the Green Building preset (`green-building` in the wal.sh display spec v0.2.1). The preset's **gap of 0.35** (masonry between windows) is **not drawn**: the display paints adjacent cells edge to edge, so same-coloured neighbours merge. Drawing the masonry would need a change to the display, which this recording deliberately does not make.
+
+**The game** is SPEC v1 on the Python engine server; nothing on the display is scripted. [`media/green-building-game.json`](media/green-building-game.json) is a conformance trace (seed, inputs, and the digest of all 923 frames), written by [`media/green_building_game.py`](media/green_building_game.py) from the demo bot of `tetris_sim`:
+- **frames 0–539:** seed 42 with `Bot(pace=3, think=6, batch_shifts=False)`, the `python -m tetris_sim --bot` demo, so these frames are the same game as the [docs/media snapshots](../../docs/media/README.md);
+- **from frame 540:** each piece is hard-dropped 6 frames after it spawns, so the stack tops out quickly;
+- **after game over:** no input.
+
+The trace shows the countdown (frames 0–89) and 8 line clears, one of them a double (at frames 158, 224, 287, 349, 383, 436, 490 and 537). It also shows the level-up at frame 354, the top-out at frame 584 with its fill, 150-frame white wait and fall-down, the countdown of game 2 (without the boot black frame, QUIRK-10), and game 2's first piece in an empty well (frame 892 on). There are 923 frames, 30.8 s at 30 FPS.
+
+**How it is played.** [`media/record-game.el`](media/record-game.el) runs inside `emacs -nw`:
+1. It starts a private lockstep engine server (`tetris-mit-start-server`).
+2. It connects as the controller with the trace's seed, and sends the trace's inputs as protocol events and ticks. It paces them like a controller that owns time: at most 5 frames per tick, and at most 3 s ahead of the screen.
+3. It shows the frames through `tetris-mit-display-set-provider` at 30 FPS.
+4. It checks every frame's SPEC §9.4 digest against the trace.
+
+The status line under the grid is the display's own. The last screen of the cast is the result:
+
+```
+green-building-emacs: 923/923 digests match the trace, 0 stalls -- PASS
+played 923 frames in 31.9 s (30.8 s at 30 FPS)
+```
+
+**Timing.**
+- A "stall" is a 1/30 s tick with no frame ready.
+- A loaded host also runs Emacs's 30 FPS timer late, and no stall counts that. The second line shows it: this take was made at a load average of 8 to 9 on 4 CPUs, under `nice`, and played 3.5 % slow.
+- The cast opens on the empty display. `record.sh` folds the startup into the first frame at t = 0: that is Emacs starting, drawing `*scratch*`, loading the display, and launching the server, 1.2 s here. The fold keeps the output byte for byte and changes only the timestamps. `record-game.el` marks where the game starts, with an invisible terminal-title sequence.
+- The rest is timed as played. agg's idle limit (6 s) is longer than the game's longest still stretch (the 5 s white wait), so the GIF keeps the recorded timing.
+
+**Reproduce**, from the repository root:
+
+```sh
+PY=/path/to/python contrib/emacs/media/record.sh          # trace, cast, gif
+contrib/emacs/media/record.sh cast                         # or one step: trace | cast | gif
+```
+
+It needs Emacs 28.1 or later, asciinema 3.x, and agg: on FreeBSD, `pkg install asciinema asciinema-agg`. The `agg` package is Anti-Grain Geometry, not this. It also needs a Python that can import the engine, with no extra packages. It uses the settings of `docs/media/record_casts.sh`: `asciinema rec --headless -f asciicast-v2`, and agg with DejaVu Sans Mono and line height 1.2. Emacs runs as `emacs -Q` plus a throwaway init directory whose only line, `(setq xterm-query-timeout nil)`, skips xterm.el's terminal queries, which a headless recorder never answers. The inputs, and so every frame, are deterministic. Only the wall-clock timing varies with host load, and any stall shows in the summary. The recording was made on FreeBSD 15.1 with Emacs 31.1, Python 3.12.14, asciinema 3.2.1 and agg 1.9.0. Nothing is uploaded.
+
 ## Driving the real building on Sep 29
 
 The facade is just another SPEC §2.3 `Display`. Either server can drive one, with `--display module:attr`. This takes any object with `send(frame)` and `makeframe()`, such as a subclass of `impl/python/legacy/utilities/display.py`'s `Display`, and a legacy one is handed a legacy `Frame` of `Color`. Point it at whatever the hack exposes:
