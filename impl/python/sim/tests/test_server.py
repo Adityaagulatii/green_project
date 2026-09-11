@@ -34,9 +34,16 @@ from tetris_engine.tables import ACTIONS
 from tetris_sim import protocol as P
 from tetris_sim.bot import Bot
 from tetris_sim.recorder import Recorder, record
-from tetris_sim.server import (MAX_CLIENTS, MAX_ERRORS, DisplayServer,
-                               DisplaySink, EngineServer, HtmlSink,
-                               _is_loopback, load_display)
+from tetris_sim.server import (
+    MAX_CLIENTS,
+    MAX_ERRORS,
+    DisplayServer,
+    DisplaySink,
+    EngineServer,
+    HtmlSink,
+    _is_loopback,
+    load_display,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 TRACES = sorted((ROOT / "spec" / "conformance" / "traces").glob("*.json"))
