@@ -501,7 +501,11 @@ def test_engine_protocol_errors(transport):
             if transport == "tcp":
                 out["too large"] = await big.error_then_closed(20)
             else:  # the WebSocket library enforces max_size: close 1009
-                out["too large"] = (await big.recv(20), big.close_code)
+                # (joining mid-session, the viewer first gets the state, §4.7)
+                seen = []
+                while (msg := await big.recv(20)) is not None:
+                    seen.append(msg["type"])
+                out["too large"] = (seen, big.close_code)
             many = await connect(url, "viewer")
             for _ in range(MAX_ERRORS):
                 await many.raw(b"nope\n")
@@ -525,7 +529,7 @@ def test_engine_protocol_errors(transport):
                                  "forbidden"]
     assert out["still playing"] == 0
     assert out["too large"] == (("too_large", True) if transport == "tcp"
-                                else (None, 1009))
+                                else (["state"], 1009))
     assert out["many"] == ["malformed"] * MAX_ERRORS + ["too_many_errors"]
 
 
@@ -603,7 +607,9 @@ def test_a_viewer_that_stops_reading_is_disconnected(transport, monkeypatch):
             k = server.session.k
             await until(lambda: server.session.k > k + 30)
             reader.cancel()
-            lazy.close()
+            # Drop it: a close handshake would wait on a reader that never
+            # reads (StreamWriter and websocket connection alike).
+            lazy.transport.abort()
             return server.controller is not None
         finally:
             await server.close()

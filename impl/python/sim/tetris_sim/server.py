@@ -830,7 +830,8 @@ async def serve(args):
         raise
     if not args.unix and not _is_loopback(args.host):
         print(f"tetris_sim.server: WARNING: {args.host} is not loopback and "
-              "protocol v0 has no authentication", file=sys.stderr)
+              "the protocol has no authentication (contract §9.1)",
+              file=sys.stderr)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError, RuntimeError):
