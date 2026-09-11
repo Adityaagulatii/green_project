@@ -16,7 +16,8 @@ Every step delivers the same four things for its language:
 | 1 | Python 3.12 | Hypothesis | terminal (ANSI truecolor) + self-contained HTML/GIF export; the existing pygame `DummyDisplay` stays optional | the original code moves, **unchanged**, to `impl/python/legacy/`; differential tests drive the legacy methods; **seals spec v1** |
 | 2 | Hy 1.x | Hypothesis (from Hy) | terminal | the most direct port, since it shares Python's runtime and display API; **seals spec v2** |
 | 3 | Clojure (`.cljc` engine) + ClojureScript | clojure.spec + test.check | **web**: a browser canvas of the building facade (shadow-cljs) | follows the aygp-dr Clojure standard v1 (deps.edn, bb tasks); **seals spec v3** |
-| 4 | Guile 3 (Scheme) | SRFI-64 plus a small generator/shrinker harness (or guile-quickcheck if it's available) | terminal | a "pure" functional build, matching dsp-dr's Guile work; **seals spec v4** |
+| 4 | Emacs Lisp (interface) | ERT, in batch; includes replaying the known-answer vectors (KAV-NN) through the engine server | an Emacs rendering buffer: face-colored cells and a status line | live play and a test driver through the remote protocol ([`PROTOCOL.md`](PROTOCOL.md)), in `contrib/emacs/`; a pure-Elisp engine is out of scope for now |
+| 5 | Guile 3 (Scheme) | SRFI-64 plus a small generator/shrinker harness (or guile-quickcheck if it's available) | terminal | a "pure" functional build, matching dsp-dr's Guile work; **seals spec v4** |
 
 ## Repo layout
 
@@ -92,4 +93,4 @@ Work happens on `main` of this fork (`aygp-dr/17x9-Tetris`), with one annotated 
 ## Timeline
 - **By Sun Sep 13 (hack day):** steps 1–2, with the HTML simulator export usable for demos.
 - **Before the Tue Sep 29 live demo:** step 3, the web simulator.
-- **After:** step 4, Guile.
+- **After:** step 5, Guile.
