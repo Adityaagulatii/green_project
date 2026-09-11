@@ -1,0 +1,4 @@
+{"format":"17x9-tetris-transcript","contract":1,"name":"e02-hello-required","kind":"errors","seed":1,"description":"The first message must be hello."}
+[">",{"type":"ping","id":1}]
+["<",{"type":"error","code":"hello_required"}]
+["<close"]

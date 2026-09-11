@@ -1,0 +1,4 @@
+{"format":"17x9-tetris-transcript","contract":1,"name":"e04-bad-hello","kind":"errors","seed":1,"description":"A seed outside 0..2^32-1 is refused."}
+[">",{"type":"hello","protocol":"17x9-tetris-remote","version":1,"role":"controller","client":"17x9-conformance","seed":4294967296}]
+["<",{"type":"error","code":"bad_hello"}]
+["<close"]

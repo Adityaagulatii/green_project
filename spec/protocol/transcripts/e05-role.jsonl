@@ -1,0 +1,4 @@
+{"format":"17x9-tetris-transcript","contract":1,"name":"e05-role","kind":"errors","seed":1,"description":"An engine server refuses a producer."}
+[">",{"type":"hello","protocol":"17x9-tetris-remote","version":1,"role":"producer","client":"17x9-conformance","seed":1}]
+["<",{"type":"error","code":"role"}]
+["<close"]

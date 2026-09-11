@@ -1,0 +1,6 @@
+{"format":"17x9-tetris-transcript","contract":1,"name":"e06-too-large","kind":"errors","seed":1,"description":"A message of 65536 bytes of JSON text is too large, and fatal (65535 is accepted: e01)."}
+[">",{"type":"hello","protocol":"17x9-tetris-remote","version":1,"role":"controller","client":"17x9-conformance","seed":1}]
+["<",{"type":"hello","protocol":"17x9-tetris-remote","version":1,"role":"server","mode":"engine","client_role":"controller","rows":17,"cols":9,"fps":30,"max_message":65536,"seed":1,"clock":"lockstep"}]
+[">pad",65536]
+["<",{"type":"error","code":"too_large"}]
+["<close"]
