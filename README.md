@@ -1,5 +1,9 @@
 # 17×9 Tetris: polyglot fork
 
+> **New here for the "Tonight's Sky" facade animation?** See
+> **[SETUP.md](SETUP.md)** for the full setup guide, including how to run it
+> locally and push it live to your own hosted Green Building instance.
+
 Tetris on MIT's Green Building, whose facade has **153 lit windows**: a 17×9 display running at 30 FPS. This fork turns the original Python game into a **language-neutral spec** and rebuilds it in turn, **Python → Hy → Clojure/ClojureScript → Elisp → Guile 3**, each rebuild held to the same conformance traces. It is also the starting kit for [Sundai Hack 140](docs/events/2026-09-13-sundai-hack-140.md) (Sun Sep 13), where the building becomes a body, and for the live demo on the building (Tue Sep 29).
 
 - **[SPEC.md](SPEC.md).** The canonical, versioned spec. Everything else defers to it.
