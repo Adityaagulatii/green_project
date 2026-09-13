@@ -5,6 +5,8 @@ import math
 
 from tetris_engine.tables import COLS, ROWS
 
+from .sky import TonightsSky
+
 
 class Pulse:
     """A slow "breathing" mood colour, brightest at the centre floors."""
@@ -54,4 +56,4 @@ class Wave:
         return tuple(rows)
 
 
-ANIMATIONS = {"pulse": Pulse, "wave": Wave}
+ANIMATIONS = {"pulse": Pulse, "wave": Wave, "sky": TonightsSky}
